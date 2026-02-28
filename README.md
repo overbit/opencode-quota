@@ -233,6 +233,14 @@ All options go under `experimental.quotaToast` in `opencode.json` or `opencode.j
 | `googleModels`      | `["CLAUDE"]` | Google models: `CLAUDE`, `G3PRO`, `G3FLASH`, `G3IMAGE`                                               |
 | `debug`             | `false`      | Show debug info in toasts (and a debug-only toast when otherwise suppressed)                         |
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full policy and workflow.
+
+This project prefers an issue-first contribution model for features, bug fixes, refactors, and behavioral changes. Local pre-commit checks run formatting, typecheck, and tests; PR CI currently runs typecheck and build across Node versions.
+
+Issue/PR templates are enforced in `.github/ISSUE_TEMPLATE/` and `.github/pull_request_template.md` for consistent titles and required validation details.
+
 ## Development
 
 ```sh
