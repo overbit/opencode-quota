@@ -34,6 +34,10 @@ jobs:
           echo "Setting package.json version to $VERSION (from tag $TAG)"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      - name: Verify package.json version matches release tag
+        if: github.event_name == 'release'
+        run: npm run verify:release-version
+
       - name: Assert ref is a tag (release only)
         if: github.event_name == 'release'
         run: |
@@ -63,3 +67,57 @@ jobs:
           NPM_CONFIG_PROVENANCE_SOURCE_REPOSITORY_COMMIT: ${{ github.sha }}
           NPM_CONFIG_PROVENANCE_SOURCE_REPOSITORY_URL: https://github.com/${{ github.repository }}
         run: npm publish --access public --provenance
+
+      - name: Commit synced version back to repository
+        if: github.event_name == 'release'
+        env:
+          TARGET_BRANCH: ${{ github.event.release.target_commitish }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No package version file changes to commit."
+            exit 0
+          fi
+
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          BRANCH="${TARGET_BRANCH:-$DEFAULT_BRANCH}"
+
+          if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Target '$BRANCH' is not a remote branch; falling back to '$DEFAULT_BRANCH'."
+            BRANCH="$DEFAULT_BRANCH"
+          fi
+
+          echo "Committing synced package version to branch '$BRANCH'"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(release): sync package version to ${VERSION}"
+
+          git fetch origin "$BRANCH"
+          git rebase "origin/$BRANCH"
+          git push origin HEAD:"$BRANCH"
+
+      - name: Verify committed sync reached remote branch
+        if: github.event_name == 'release'
+        env:
+          TARGET_BRANCH: ${{ github.event.release.target_commitish }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          BRANCH="${TARGET_BRANCH:-$DEFAULT_BRANCH}"
+          if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            BRANCH="$DEFAULT_BRANCH"
+          fi
+
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          git fetch origin "$BRANCH"
+          REMOTE_VERSION="$(git show "origin/$BRANCH:package.json" | node -e "process.stdin.setEncoding('utf8'); let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => console.log(JSON.parse(d).version || ''));")"
+
+          if [ "$REMOTE_VERSION" != "$VERSION" ]; then
+            echo "Remote branch $BRANCH package.json version is '$REMOTE_VERSION', expected '$VERSION'" >&2
+            exit 1
+          fi
+
+          echo "Remote branch $BRANCH package.json version matches release tag $TAG"
