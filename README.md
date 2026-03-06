@@ -1,14 +1,14 @@
 # Opencode Quota
 
-Local quota toasts and token reports for OpenCode, with zero LLM/model API calls.
-
-`opencode-quota` gives you two things:
+Local quota toasts and token reports for OpenCode with zero context window pollution. `opencode-quota` gives you two things:
 
 - Automatic quota toasts after assistant responses
 - Manual `/quota` and `/tokens_*` commands for deeper local reporting
 
-Supported quota providers: GitHub Copilot, OpenAI, Qwen Code, Chutes AI, Firmware AI, Google Antigravity, and Z.ai.  
-Supported token pricing: any provider/model present in the local `models.dev` snapshot shipped with the plugin.
+**Quota provider supports**: GitHub Copilot, OpenAI (Plus/Pro), Qwen Code, Chutes AI, Firmware AI, Google Antigravity, and Z.ai coding plan.
+
+**Token provider supports**: All models and providers in [models.dev](https://models.dev).
+
 
 ![Image of quota toasts](https://github.com/slkiser/opencode-quota/blob/main/toast.png)
 
