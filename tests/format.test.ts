@@ -97,4 +97,26 @@ describe("formatQuotaRows", () => {
 
     expect(out).toContain("→ [Copilot] (business)");
   });
+
+  it("groups legacy Google-style entries without duplicating the header text", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
+
+    const out = formatQuotaRows({
+      version: "1.0.0",
+      style: "grouped",
+      layout: { maxWidth: 50, narrowAt: 42, tinyAt: 32 },
+      entries: [
+        {
+          name: "Claude (acct)",
+          percentRemaining: 67,
+          resetTimeIso: "2026-01-15T15:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(out).toContain("→ [Google Antigravity] (acct)");
+    expect(out).toContain("Claude:");
+    expect(out).not.toContain("→ [Claude] (acct)");
+  });
 });

@@ -678,6 +678,26 @@ describe("queryCopilotQuota", () => {
     expect(diagnostics.queryPeriod).toEqual({ year: 2026, month: 1 });
   });
 
+  it("treats an invalid PAT as blocking even when OAuth auth is configured", async () => {
+    fsMocks.existsSync.mockImplementation((path) => path === patPath);
+    fsMocks.readFileSync.mockReturnValue(JSON.stringify({ token: "github_pat_123456789" }));
+
+    const { getCopilotQuotaAuthDiagnostics } = await import("../src/lib/copilot.js");
+    const diagnostics = getCopilotQuotaAuthDiagnostics({
+      "github-copilot": { type: "oauth", access: "oauth_access_token" },
+    });
+
+    expect(diagnostics.pat.state).toBe("invalid");
+    expect(diagnostics.oauth.configured).toBe(true);
+    expect(diagnostics.effectiveSource).toBe("pat");
+    expect(diagnostics.override).toBe("pat_overrides_oauth");
+    expect(diagnostics.billingMode).toBe("none");
+    expect(diagnostics.billingScope).toBe("none");
+    expect(diagnostics.billingApiAccessLikely).toBe(false);
+    expect(diagnostics.remainingTotalsState).toBe("unavailable");
+    expect(diagnostics.queryPeriod).toBeUndefined();
+  });
+
   it("surfaces enterprise billing scope and compatibility errors in diagnostics", async () => {
     fsMocks.existsSync.mockImplementation((path) => path === patPath);
     fsMocks.readFileSync.mockReturnValue(

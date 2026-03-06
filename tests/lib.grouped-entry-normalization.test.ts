@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeGroupedQuotaEntries } from "../src/lib/grouped-entry-normalization.js";
 
 describe("normalizeGroupedQuotaEntries", () => {
-  it("keeps the Google fallback specific to /quota rendering", () => {
+  it("applies the Google fallback to grouped toast and /quota rendering", () => {
     const entry = {
       name: "Claude (acct)",
       percentRemaining: 67,
@@ -21,7 +21,8 @@ describe("normalizeGroupedQuotaEntries", () => {
     expect(normalizeGroupedQuotaEntries([entry], "toast")).toEqual([
       {
         ...entry,
-        group: "Claude (acct)",
+        group: "Google Antigravity (acct)",
+        label: "Claude:",
       },
     ]);
   });

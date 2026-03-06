@@ -468,11 +468,13 @@ export function getCopilotQuotaAuthDiagnostics(authData: AuthData | null): Copil
       ? validatePatTargetCompatibility(resolvedPatTarget.target, pat.tokenKind)
       : null;
 
+  const patBlocksOAuth = pat.state !== "absent";
   let effectiveSource: EffectiveCopilotAuthSource = "none";
-  if (pat.state === "valid") effectiveSource = "pat";
+  if (patBlocksOAuth) effectiveSource = "pat";
   else if (auth) effectiveSource = "oauth";
 
-  const billingTarget = pat.state === "valid" ? resolvedPatTarget.target : auth ? ({ scope: "user" } as const) : null;
+  const billingTarget =
+    pat.state === "valid" ? resolvedPatTarget.target : !patBlocksOAuth && auth ? ({ scope: "user" } as const) : null;
   const billingMode = getBillingModeForTarget(billingTarget);
 
   return {
@@ -484,7 +486,7 @@ export function getCopilotQuotaAuthDiagnostics(authData: AuthData | null): Copil
       hasAccessToken: Boolean(auth?.access),
     },
     effectiveSource,
-    override: pat.state === "valid" && auth ? "pat_overrides_oauth" : "none",
+    override: patBlocksOAuth && auth ? "pat_overrides_oauth" : "none",
     billingMode,
     billingScope: getBillingScopeForTarget(billingTarget),
     billingApiAccessLikely:

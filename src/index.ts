@@ -14,6 +14,7 @@ export { QuotaToastPlugin } from "./plugin.js";
 export type {
   QuotaToastConfig,
   GoogleModelId,
+  CopilotEnterpriseUsageResult,
   CopilotOrganizationUsageResult,
   CopilotQuotaResult,
   GoogleQuotaResult,

@@ -48,15 +48,13 @@ export function normalizeGroupedQuotaEntries(
       return { ...normalized, group };
     }
 
-    if (target === "quota") {
-      const googleFallback = getGoogleFallbackMeta(entry.name);
-      if (googleFallback) {
-        return {
-          ...normalized,
-          group: googleFallback.group,
-          label: label ?? googleFallback.label,
-        };
-      }
+    const googleFallback = getGoogleFallbackMeta(entry.name);
+    if (googleFallback) {
+      return {
+        ...normalized,
+        group: googleFallback.group,
+        label: label ?? googleFallback.label,
+      };
     }
 
     return {
