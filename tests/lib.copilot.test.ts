@@ -323,6 +323,56 @@ describe("queryCopilotQuota", () => {
     expect(result && result.success && "percentRemaining" in result).toBe(false);
   });
 
+  it("treats empty organization usageItems as zero usage instead of an error", async () => {
+    fsMocks.existsSync.mockImplementation((path) => path === patPath);
+    fsMocks.readFileSync.mockReturnValue(
+      JSON.stringify({
+        token: "github_pat_123456789",
+        tier: "business",
+        organization: "acme-corp",
+      }),
+    );
+
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const target = new URL(String(url));
+
+      if (
+        target.pathname ===
+          "/organizations/acme-corp/settings/billing/premium_request/usage" &&
+        target.searchParams.get("year") === "2026" &&
+        target.searchParams.get("month") === "1"
+      ) {
+        return new Response(
+          JSON.stringify({
+            organization: "acme-corp",
+            usageItems: [],
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock as any);
+
+    const { queryCopilotQuota } = await import("../src/lib/copilot.js");
+    const result = await queryCopilotQuota();
+
+    expect(result).toEqual({
+      success: true,
+      mode: "organization_usage",
+      organization: "acme-corp",
+      username: undefined,
+      period: {
+        year: 2026,
+        month: 1,
+      },
+      used: 0,
+      resetTimeIso: "2026-02-01T00:00:00.000Z",
+    });
+  });
+
   it("uses the documented enterprise billing endpoint with optional organization and user filters", async () => {
     fsMocks.existsSync.mockImplementation((path) => path === patPath);
     fsMocks.readFileSync.mockReturnValue(
@@ -393,6 +443,57 @@ describe("queryCopilotQuota", () => {
     expect(requestUrl.searchParams.get("day")).toBeNull();
   });
 
+  it("treats empty enterprise usageItems as zero usage instead of an error", async () => {
+    fsMocks.existsSync.mockImplementation((path) => path === patPath);
+    fsMocks.readFileSync.mockReturnValue(
+      JSON.stringify({
+        token: "ghp_classic_pat",
+        tier: "enterprise",
+        enterprise: "acme-enterprise",
+      }),
+    );
+
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const target = new URL(String(url));
+
+      if (
+        target.pathname ===
+          "/enterprises/acme-enterprise/settings/billing/premium_request/usage" &&
+        target.searchParams.get("year") === "2026" &&
+        target.searchParams.get("month") === "1"
+      ) {
+        return new Response(
+          JSON.stringify({
+            enterprise: "acme-enterprise",
+            usageItems: [],
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock as any);
+
+    const { queryCopilotQuota } = await import("../src/lib/copilot.js");
+    const result = await queryCopilotQuota();
+
+    expect(result).toEqual({
+      success: true,
+      mode: "enterprise_usage",
+      enterprise: "acme-enterprise",
+      organization: undefined,
+      username: undefined,
+      period: {
+        year: 2026,
+        month: 1,
+      },
+      used: 0,
+      resetTimeIso: "2026-02-01T00:00:00.000Z",
+    });
+  });
+
   it("rejects fine-grained PATs for enterprise billing before making a request", async () => {
     fsMocks.existsSync.mockImplementation((path) => path === patPath);
     fsMocks.readFileSync.mockReturnValue(
@@ -457,6 +558,55 @@ describe("queryCopilotQuota", () => {
       used: 9,
       total: 300,
       percentRemaining: 97,
+      resetTimeIso: "2026-02-01T00:00:00.000Z",
+    });
+  });
+
+  it("uses net_quantity when gross_quantity is absent", async () => {
+    fsMocks.existsSync.mockImplementation((path) => path === patPath);
+    fsMocks.readFileSync.mockReturnValue(
+      JSON.stringify({
+        token: "github_pat_123456789",
+        tier: "business",
+        organization: "acme-corp",
+      }),
+    );
+
+    const fetchMock = vi.fn(async (url: unknown) => {
+      const target = String(url);
+
+      if (target.includes("/organizations/acme-corp/settings/billing/premium_request/usage")) {
+        return new Response(
+          JSON.stringify({
+            usage_items: [
+              {
+                sku: "Copilot Premium Request",
+                net_quantity: 11,
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock as any);
+
+    const { queryCopilotQuota } = await import("../src/lib/copilot.js");
+    const result = await queryCopilotQuota();
+
+    expect(result).toEqual({
+      success: true,
+      mode: "organization_usage",
+      organization: "acme-corp",
+      username: undefined,
+      period: {
+        year: 2026,
+        month: 1,
+      },
+      used: 11,
       resetTimeIso: "2026-02-01T00:00:00.000Z",
     });
   });

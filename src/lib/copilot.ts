@@ -674,7 +674,10 @@ function computePercentRemainingFromUsed(params: { used: number; total: number }
   return Math.max(0, Math.min(100, Math.floor((remaining * 100) / total)));
 }
 
-function getPremiumUsageItems(response: BillingUsageResponse): BillingUsageItem[] {
+function getPremiumUsageItems(
+  response: BillingUsageResponse,
+  options?: { allowEmpty?: boolean },
+): BillingUsageItem[] {
   const items = Array.isArray(response.usageItems)
     ? response.usageItems
     : Array.isArray(response.usage_items)
@@ -694,6 +697,10 @@ function getPremiumUsageItems(response: BillingUsageResponse): BillingUsageItem[
     );
   }
 
+  if (premiumItems.length === 0 && options?.allowEmpty) {
+    return [];
+  }
+
   if (premiumItems.length === 0) {
     throw new Error("Billing API returned empty usageItems array for Copilot premium requests.");
   }
@@ -703,9 +710,18 @@ function getPremiumUsageItems(response: BillingUsageResponse): BillingUsageItem[
 
 function sumUsedUnits(items: BillingUsageItem[]): number {
   return items.reduce((sum, item) => {
-    const gross = item.grossQuantity ?? item.gross_quantity ?? 0;
-    return sum + (typeof gross === "number" ? gross : 0);
+    const used =
+      item.grossQuantity ??
+      item.gross_quantity ??
+      item.netQuantity ??
+      item.net_quantity ??
+      0;
+    return sum + (typeof used === "number" ? used : 0);
   }, 0);
+}
+
+function formatBillingPeriod(period: { year: number; month: number }): string {
+  return `${period.year}-${String(period.month).padStart(2, "0")}`;
 }
 
 function getBillingResponsePeriod(
@@ -753,7 +769,7 @@ function toOrganizationUsageResultFromBilling(params: {
   username?: string;
   billingPeriod: BillingPeriodQuery;
 }): CopilotOrganizationUsageResult {
-  const premiumItems = getPremiumUsageItems(params.response);
+  const premiumItems = getPremiumUsageItems(params.response, { allowEmpty: true });
 
   return {
     success: true,
@@ -773,7 +789,7 @@ function toEnterpriseUsageResultFromBilling(params: {
   username?: string;
   billingPeriod: BillingPeriodQuery;
 }): CopilotEnterpriseUsageResult {
-  const premiumItems = getPremiumUsageItems(params.response);
+  const premiumItems = getPremiumUsageItems(params.response, { allowEmpty: true });
 
   return {
     success: true,
@@ -891,11 +907,22 @@ export function formatCopilotQuota(result: CopilotResult): string | null {
   }
 
   if (result.mode === "organization_usage") {
-    return `Copilot Org ${result.used} used`;
+    const details = [`${result.used} used`, formatBillingPeriod(result.period)];
+    if (result.username) {
+      details.push(`user=${result.username}`);
+    }
+    return `Copilot Org (${result.organization}) ${details.join(" | ")}`;
   }
 
   if (result.mode === "enterprise_usage") {
-    return `Copilot Enterprise ${result.used} used`;
+    const details = [`${result.used} used`, formatBillingPeriod(result.period)];
+    if (result.organization) {
+      details.push(`org=${result.organization}`);
+    }
+    if (result.username) {
+      details.push(`user=${result.username}`);
+    }
+    return `Copilot Enterprise (${result.enterprise}) ${details.join(" | ")}`;
   }
 
   const percentUsed = 100 - result.percentRemaining;

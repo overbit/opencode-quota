@@ -153,6 +153,8 @@ Enterprise example:
 
 Organization and enterprise managed modes report pooled premium usage for the current billing period. They do not represent a single user's quota, and the available GitHub billing API/config does not provide a reliable way to derive a true per-user remaining premium quota from pooled usage.
 
+Managed `/quota` and toast output include the organization or enterprise identifier, the billing month, and any configured organization or user filters so pooled usage is easier to interpret.
+
 Run `/quota_status` and check `copilot_quota_auth` to confirm whether the plugin is in `user_quota`, `organization_usage`, or `enterprise_usage` mode. In managed modes, `billing_api_access_likely=true` means the token should be able to query billing usage, but it does not mean per-user remaining totals can be computed.
 
 - **Organization PAT permission:** fine-grained PAT with **Organization permissions > Administration > Read**.

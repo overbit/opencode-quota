@@ -7,6 +7,10 @@
 import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
 import { queryCopilotQuota } from "../lib/copilot.js";
 
+function formatBillingPeriod(period: { year: number; month: number }): string {
+  return `${period.year}-${String(period.month).padStart(2, "0")}`;
+}
+
 export const copilotProvider: QuotaProvider = {
   id: "copilot",
 
@@ -54,8 +58,23 @@ export const copilotProvider: QuotaProvider = {
           ? [
             {
               kind: "value",
-              name: result.mode === "enterprise_usage" ? "Copilot Enterprise" : "Copilot Org",
-              value: `${result.used} used`,
+              name:
+                result.mode === "enterprise_usage"
+                  ? `Copilot Enterprise (${result.enterprise})`
+                  : `Copilot Org (${result.organization})`,
+              value:
+                result.mode === "enterprise_usage"
+                  ? [
+                    `${result.used} used`,
+                    formatBillingPeriod(result.period),
+                    ...(result.organization ? [`org=${result.organization}`] : []),
+                    ...(result.username ? [`user=${result.username}`] : []),
+                  ].join(" | ")
+                  : [
+                    `${result.used} used`,
+                    formatBillingPeriod(result.period),
+                    ...(result.username ? [`user=${result.username}`] : []),
+                  ].join(" | "),
               resetTimeIso: result.resetTimeIso,
             },
           ]

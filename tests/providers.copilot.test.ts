@@ -48,6 +48,7 @@ describe("copilot provider", () => {
       success: true,
       mode: "organization_usage",
       organization: "acme-corp",
+      username: "alice",
       period: {
         year: 2026,
         month: 1,
@@ -61,8 +62,8 @@ describe("copilot provider", () => {
     expect(out.entries).toEqual([
       {
         kind: "value",
-        name: "Copilot Org",
-        value: "9 used",
+        name: "Copilot Org (acme-corp)",
+        value: "9 used | 2026-01 | user=alice",
         resetTimeIso: "2026-02-01T00:00:00.000Z",
       },
     ]);
@@ -88,8 +89,8 @@ describe("copilot provider", () => {
     expect(out.entries).toEqual([
       {
         kind: "value",
-        name: "Copilot Enterprise",
-        value: "19 used",
+        name: "Copilot Enterprise (acme-enterprise)",
+        value: "19 used | 2026-01 | org=acme-corp",
         resetTimeIso: "2026-02-01T00:00:00.000Z",
       },
     ]);
