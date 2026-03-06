@@ -5,7 +5,7 @@
 import type { QuotaToastEntry, QuotaToastError, SessionTokensData } from "./entries.js";
 import { isValueEntry } from "./entries.js";
 import { bar, clampInt, formatResetCountdown, padLeft, padRight } from "./format-utils.js";
-import { formatQuotaRowsGrouped, type ToastGroupEntry } from "./toast-format-grouped.js";
+import { formatQuotaRowsGrouped } from "./toast-format-grouped.js";
 import { renderSessionTokensLines } from "./session-tokens-format.js";
 
 export function formatQuotaRows(params: {
@@ -23,7 +23,7 @@ export function formatQuotaRows(params: {
   if (params.style === "grouped") {
     return formatQuotaRowsGrouped({
       layout: params.layout,
-      entries: params.entries as ToastGroupEntry[] | undefined,
+      entries: params.entries,
       errors: params.errors,
       sessionTokens: params.sessionTokens,
     });

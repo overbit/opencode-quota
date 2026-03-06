@@ -9,15 +9,8 @@ import type { QuotaToastEntry, QuotaToastError, SessionTokensData } from "./entr
 import { isValueEntry } from "./entries.js";
 import { bar, clampInt, formatResetCountdown, padLeft, padRight } from "./format-utils.js";
 import { formatGroupedHeader } from "./grouped-header-format.js";
+import { normalizeGroupedQuotaEntries } from "./grouped-entry-normalization.js";
 import { renderSessionTokensLines } from "./session-tokens-format.js";
-
-export type ToastGroupEntry = QuotaToastEntry;
-
-function splitGroupName(name: string): { group: string; label: string } {
-  // Heuristic: "Label (group)" -> group is label, label is empty.
-  // Prefer explicit group/label metadata when available.
-  return { group: name, label: "" };
-}
 
 export function formatQuotaRowsGrouped(params: {
   layout?: {
@@ -25,7 +18,7 @@ export function formatQuotaRowsGrouped(params: {
     narrowAt: number;
     tinyAt: number;
   };
-  entries?: ToastGroupEntry[];
+  entries?: QuotaToastEntry[];
   errors?: QuotaToastError[];
   sessionTokens?: SessionTokensData;
 }): string {
@@ -43,26 +36,13 @@ export function formatQuotaRowsGrouped(params: {
 
   // Group entries in stable order.
   const groupOrder: string[] = [];
-  const groups = new Map<string, ToastGroupEntry[]>();
-  for (const e of params.entries ?? []) {
-    const group = (e.group ?? "").trim();
-    const label = (e.label ?? "").trim();
-    if (!group) {
-      const fallback = splitGroupName(e.name);
-      const g = fallback.group;
-      const list = groups.get(g);
-      if (list) list.push({ ...e, group: g, label: label || fallback.label });
-      else {
-        groupOrder.push(g);
-        groups.set(g, [{ ...e, group: g, label: label || fallback.label }]);
-      }
-      continue;
-    }
-    const list = groups.get(group);
-    if (list) list.push(e);
+  const groups = new Map<string, QuotaToastEntry[]>();
+  for (const entry of normalizeGroupedQuotaEntries(params.entries ?? [], "toast")) {
+    const list = groups.get(entry.group);
+    if (list) list.push(entry);
     else {
-      groupOrder.push(group);
-      groups.set(group, [e]);
+      groupOrder.push(entry.group);
+      groups.set(entry.group, [entry]);
     }
   }
 

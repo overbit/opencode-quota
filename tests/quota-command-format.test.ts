@@ -82,4 +82,25 @@ describe("formatQuotaCommand", () => {
       Z.ai: Authentication expired"
     `);
   });
+
+  it("sizes the grouped /quota label column from the visible grouped text", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-15T12:00:00.000Z"));
+
+    const out = formatQuotaCommand({
+      entries: [
+        {
+          name: "Copilot",
+          group: "Copilot (personal)",
+          label: "Quota:",
+          right: "12345678901234567890",
+          percentRemaining: 86,
+          resetTimeIso: "2026-01-16T00:00:00.000Z",
+        },
+      ],
+      errors: [],
+    });
+
+    expect(out).toContain("Quota: 12345678901234567890");
+  });
 });

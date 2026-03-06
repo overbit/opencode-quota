@@ -1,19 +1,15 @@
-import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
+import type {
+  QuotaProvider,
+  QuotaProviderContext,
+  QuotaProviderResult,
+  QuotaToastEntry,
+} from "../lib/entries.js";
 import { computeQwenQuota, readQwenLocalQuotaState } from "../lib/qwen-local-quota.js";
 import {
   DEFAULT_QWEN_AUTH_CACHE_MAX_AGE_MS,
   hasQwenOAuthAuthCached,
   isQwenCodeModelId,
 } from "../lib/qwen-auth.js";
-
-type GroupedToastEntry = {
-  name: string;
-  percentRemaining: number;
-  resetTimeIso?: string;
-  group?: string;
-  label?: string;
-  right?: string;
-};
 
 export const qwenCodeProvider: QuotaProvider = {
   id: "qwen-code",
@@ -40,7 +36,7 @@ export const qwenCodeProvider: QuotaProvider = {
     const style = ctx.config.toastStyle ?? "classic";
 
     if (style === "grouped") {
-      const entries: GroupedToastEntry[] = [
+      const entries: QuotaToastEntry[] = [
         {
           name: "Qwen Daily",
           group: "Qwen (OAuth)",

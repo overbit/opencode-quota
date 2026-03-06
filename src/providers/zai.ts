@@ -4,7 +4,12 @@
  * Normalizes Z.ai quota into generic toast entries.
  */
 
-import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
+import type {
+  QuotaProvider,
+  QuotaProviderContext,
+  QuotaProviderResult,
+  QuotaToastEntry,
+} from "../lib/entries.js";
 import { queryZaiQuota } from "../lib/zai.js";
 import { isAnyProviderIdAvailable } from "../lib/provider-availability.js";
 
@@ -85,7 +90,7 @@ export const zaiProvider: QuotaProvider = {
     }
 
     // Grouped style: expose all windows
-    const entries: Array<{ name: string; percentRemaining: number; group?: string; label?: string; resetTimeIso?: string }> = [];
+    const entries: QuotaToastEntry[] = [];
     const group = result.label;
 
     const hourly = result.windows.hourly;

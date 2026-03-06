@@ -2,18 +2,14 @@
  * OpenAI (Plus/Pro) provider wrapper.
  */
 
-import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
+import type {
+  QuotaProvider,
+  QuotaProviderContext,
+  QuotaProviderResult,
+  QuotaToastEntry,
+} from "../lib/entries.js";
 import { queryOpenAIQuota } from "../lib/openai.js";
 import { isAnyProviderIdAvailable } from "../lib/provider-availability.js";
-
-type GroupedToastEntry = {
-  name: string;
-  percentRemaining: number;
-  resetTimeIso?: string;
-  group?: string;
-  label?: string;
-  right?: string;
-};
 
 export const openaiProvider: QuotaProvider = {
   id: "openai",
@@ -85,7 +81,7 @@ export const openaiProvider: QuotaProvider = {
     }
 
     // Grouped style: expose all windows.
-    const entries: GroupedToastEntry[] = [];
+    const entries: QuotaToastEntry[] = [];
     const group = result.label;
 
     const hourly = result.windows.hourly;

@@ -7,11 +7,11 @@
  * - Includes session token summary (input/output per model)
  */
 
-import type { QuotaToastError, SessionTokensData } from "./entries.js";
+import type { QuotaToastEntry, QuotaToastError, SessionTokensData } from "./entries.js";
 import { isValueEntry } from "./entries.js";
 import { bar, clampInt, padRight } from "./format-utils.js";
 import { formatGroupedHeader } from "./grouped-header-format.js";
-import type { ToastGroupEntry } from "./toast-format-grouped.js";
+import { normalizeGroupedQuotaEntries } from "./grouped-entry-normalization.js";
 import { renderSessionTokensLines } from "./session-tokens-format.js";
 
 /**
@@ -34,53 +34,27 @@ function formatResetsIn(iso?: string): string {
   return ` (resets in ${formatResetTimeSeconds(diffSeconds)})`;
 }
 
-function looksLikeGoogleModel(label: string): boolean {
-  const x = label.toLowerCase();
-  return x === "claude" || x === "g3pro" || x === "g3flash" || x === "g3image";
-}
-
-function coerceGrouped(entries: ToastGroupEntry[]): ToastGroupEntry[] {
-  const out: ToastGroupEntry[] = [];
-  for (const e of entries) {
-    if (e.group) {
-      out.push(e);
-      continue;
-    }
-
-    // Heuristic for Google entries currently named like "Claude (abc..gmail)".
-    const m = e.name.match(/^(.+?)\s*\((.+)\)\s*$/);
-    if (m && looksLikeGoogleModel(m[1]!.trim())) {
-      out.push({
-        ...e,
-        group: `Google Antigravity (${m[2]!.trim()})`,
-        label: `${m[1]!.trim()}:`,
-      });
-      continue;
-    }
-
-    // Default: treat the whole name as one grouped row.
-    out.push({ ...e, group: e.name, label: "Status:" });
-  }
-  return out;
+function getGroupedLeftText(entry: QuotaToastEntry): string {
+  const label = (entry.label ?? entry.name).trim();
+  const right = entry.right?.trim();
+  return right ? `${label} ${right}` : label;
 }
 
 export function formatQuotaCommand(params: {
-  entries: ToastGroupEntry[];
+  entries: QuotaToastEntry[];
   errors: QuotaToastError[];
   sessionTokens?: SessionTokensData;
 }): string {
-  const entries = coerceGrouped(params.entries);
+  const entries = normalizeGroupedQuotaEntries(params.entries, "quota");
 
   const groupOrder: string[] = [];
-  const groups = new Map<string, ToastGroupEntry[]>();
+  const groups = new Map<string, QuotaToastEntry[]>();
   for (const e of entries) {
-    const g = (e.group ?? "").trim();
-    if (!g) continue;
-    const list = groups.get(g);
+    const list = groups.get(e.group);
     if (list) list.push(e);
     else {
-      groupOrder.push(g);
-      groups.set(g, [e]);
+      groupOrder.push(e.group);
+      groups.set(e.group, [e]);
     }
   }
 
@@ -88,7 +62,13 @@ export function formatQuotaCommand(params: {
   lines.push("# Quota (/quota)");
 
   const barWidth = 18;
-  const leftCol = 16;
+  const leftCol = Math.max(
+    16,
+    Math.min(
+      30,
+      entries.reduce((max, entry) => Math.max(max, getGroupedLeftText(entry).length), 0),
+    ),
+  );
 
   for (let i = 0; i < groupOrder.length; i++) {
     const g = groupOrder[i]!;
@@ -99,8 +79,7 @@ export function formatQuotaCommand(params: {
     lines.push(`→ ${formatGroupedHeader(g)}`);
 
     for (const row of list) {
-      const label = (row.label ?? row.name).trim();
-      const leftText = row.right ? `${label} ${row.right}` : label;
+      const leftText = getGroupedLeftText(row);
       const labelCol = padRight(leftText, leftCol);
       const suffix = formatResetsIn(row.resetTimeIso);
 
