@@ -158,6 +158,58 @@ describe("queryCopilotQuota", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://api.github.com/copilot_internal/user");
   });
 
+  it("parses premium_interactions from /copilot_internal/user quota_snapshots", async () => {
+    authMocks.readAuthFile.mockResolvedValueOnce({
+      "github-copilot": { type: "oauth", access: "oauth_access_token", refresh: "refresh" },
+    });
+
+    const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+      const target = String(url);
+
+      if (target === "https://api.github.com/copilot_internal/user") {
+        expect(init?.headers).toMatchObject({
+          Authorization: "Bearer oauth_access_token",
+        });
+        return new Response(
+          JSON.stringify({
+            login: "slkiser",
+            access_type_sku: "free_educational_quota",
+            copilot_plan: "individual",
+            quota_reset_date: "2026-04-01",
+            quota_reset_date_utc: "2026-04-01T00:00:00.000Z",
+            quota_snapshots: {
+              premium_interactions: {
+                entitlement: 300,
+                quota_remaining: 230,
+                remaining: 230,
+                unlimited: false,
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock as any);
+
+    const { queryCopilotQuota } = await import("../src/lib/copilot.js");
+    const result = await queryCopilotQuota();
+
+    expect(result).toEqual({
+      success: true,
+      mode: "user_quota",
+      used: 70,
+      total: 300,
+      percentRemaining: 76,
+      resetTimeIso: "2026-04-01T00:00:00.000Z",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://api.github.com/copilot_internal/user");
+  });
+
   it("returns a clear error when OAuth auth exists without an access token", async () => {
     authMocks.readAuthFile.mockResolvedValueOnce({
       "github-copilot": { type: "oauth", refresh: "refresh_only" },

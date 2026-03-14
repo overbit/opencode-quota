@@ -763,6 +763,7 @@ function toUserQuotaResultFromCopilotInternal(response: unknown): CopilotQuotaRe
     ["monthly_premium_requests", "total"],
     ["premium_requests", "limit"],
     ["premium_requests", "total"],
+    ["quota_snapshots", "premium_interactions", "entitlement"],
     ["limit"],
     ["total"],
     ["quota_limit"],
@@ -784,6 +785,8 @@ function toUserQuotaResultFromCopilotInternal(response: unknown): CopilotQuotaRe
     ["monthly_quota", "remaining"],
     ["monthly_premium_requests", "remaining"],
     ["premium_requests", "remaining"],
+    ["quota_snapshots", "premium_interactions", "remaining"],
+    ["quota_snapshots", "premium_interactions", "quota_remaining"],
     ["remaining"],
     ["quota_remaining"],
     ["monthly_remaining"],
@@ -795,12 +798,15 @@ function toUserQuotaResultFromCopilotInternal(response: unknown): CopilotQuotaRe
     ["monthly_premium_requests", "reset_at"],
     ["premium_requests", "reset_at"],
     ["reset_at"],
+    ["quota_reset_date_utc"],
+    ["quota_reset_date"],
     ["quota_reset_at"],
   ];
   const tierPaths = [
     ["plan", "type"],
     ["plan", "name"],
     ["plan"],
+    ["copilot_plan"],
     ["subscription_plan"],
     ["sku"],
   ];
@@ -808,7 +814,8 @@ function toUserQuotaResultFromCopilotInternal(response: unknown): CopilotQuotaRe
   let total = getFirstNestedNumber(response, totalPaths);
   let used = getFirstNestedNumber(response, usedPaths);
   const remaining = getFirstNestedNumber(response, remainingPaths);
-  const resetTimeIso = getFirstNestedString(response, resetPaths) ?? getApproxNextResetIso();
+  const resetTimeIso =
+    normalizeResetTimeIso(getFirstNestedString(response, resetPaths)) ?? getApproxNextResetIso();
   const tier = normalizeCopilotTier(getFirstNestedString(response, tierPaths));
 
   if (total === undefined && used !== undefined && remaining !== undefined) {
@@ -835,6 +842,21 @@ function toUserQuotaResultFromCopilotInternal(response: unknown): CopilotQuotaRe
     percentRemaining: computePercentRemainingFromUsed({ used, total }),
     resetTimeIso,
   };
+}
+
+function normalizeResetTimeIso(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return `${trimmed}T00:00:00.000Z`;
+  }
+
+  const timestamp = Date.parse(trimmed);
+  if (Number.isNaN(timestamp)) return undefined;
+  return new Date(timestamp).toISOString();
 }
 
 function getApproxNextResetIso(nowMs: number = Date.now()): string {
