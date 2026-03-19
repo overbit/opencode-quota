@@ -1,7 +1,12 @@
 import type { CursorQuotaPlan } from "./types.js";
 import type { CostBuckets } from "./modelsdev-pricing.js";
 
-export type CursorLocalPricingModel = "auto" | "composer" | "composer-fast";
+export type CursorLocalPricingModel =
+  | "auto"
+  | "composer-1"
+  | "composer-1.5"
+  | "composer-2"
+  | "composer-2-fast";
 
 export type CursorResolvedModel =
   | { kind: "local"; model: CursorLocalPricingModel; pool: "auto_composer" }
@@ -30,16 +35,35 @@ const CURSOR_LOCAL_PRICING: Readonly<Record<CursorLocalPricingModel, CostBuckets
     output: 6,
     cache_read: 0.25,
   },
-  composer: {
+  "composer-1": {
+    input: 1.25,
+    output: 10,
+    cache_read: 0.125,
+  },
+  "composer-1.5": {
+    input: 3.5,
+    output: 17.5,
+    cache_read: 0.35,
+  },
+  "composer-2": {
     input: 0.5,
     output: 2.5,
     cache_read: 0.2,
   },
-  "composer-fast": {
+  "composer-2-fast": {
     input: 1.5,
     output: 7.5,
     cache_read: 0.35,
   },
+};
+
+const CURSOR_LOCAL_MODEL_ALIASES: Readonly<Record<string, CursorLocalPricingModel>> = {
+  auto: "auto",
+  "default[]": "auto",
+  "composer-1": "composer-1",
+  "composer-1.5": "composer-1.5",
+  "composer-2": "composer-2",
+  "composer-2-fast": "composer-2-fast",
 };
 
 export const CURSOR_OFFICIAL_MODEL_ALIASES: Readonly<
@@ -118,14 +142,11 @@ export function resolveCursorModel(rawModelId?: string): CursorResolvedModel {
   const model = extractCursorModelPart(rawModelId);
   if (!model) return { kind: "unknown" };
 
-  if (model === "auto") {
-    return { kind: "local", model: "auto", pool: "auto_composer" };
-  }
-
-  if (model.startsWith("composer")) {
+  const localModel = CURSOR_LOCAL_MODEL_ALIASES[model];
+  if (localModel) {
     return {
       kind: "local",
-      model: model.includes("fast") ? "composer-fast" : "composer",
+      model: localModel,
       pool: "auto_composer",
     };
   }

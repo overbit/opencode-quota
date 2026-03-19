@@ -5,7 +5,10 @@ import {
   listProviders,
   lookupCost,
 } from "../src/lib/modelsdev-pricing.js";
-import { CURSOR_OFFICIAL_MODEL_ALIASES } from "../src/lib/cursor-pricing.js";
+import {
+  CURSOR_OFFICIAL_MODEL_ALIASES,
+  lookupCursorLocalCost,
+} from "../src/lib/cursor-pricing.js";
 import { resolvePricingKey } from "../src/lib/quota-stats.js";
 
 describe("resolvePricingKey snapshot coverage", () => {
@@ -115,13 +118,68 @@ describe("resolvePricingKey snapshot coverage", () => {
     if (!auto.ok) return;
     expect(auto.key).toEqual({ provider: "cursor", model: "auto" });
 
-    const composer = resolvePricingKey({
+    const autoBare = resolvePricingKey({
+      providerID: "cursor-acp",
+      modelID: "auto",
+    });
+    expect(autoBare.ok).toBe(true);
+    if (!autoBare.ok) return;
+    expect(autoBare.key).toEqual({ provider: "cursor", model: "auto" });
+
+    const autoDefault = resolvePricingKey({
+      providerID: "cursor-acp",
+      modelID: "default[]",
+    });
+    expect(autoDefault.ok).toBe(true);
+    if (!autoDefault.ok) return;
+    expect(autoDefault.key).toEqual({ provider: "cursor", model: "auto" });
+
+    const composer1 = resolvePricingKey({
+      providerID: "cursor-acp",
+      modelID: "cursor-acp/composer-1",
+    });
+    expect(composer1.ok).toBe(true);
+    if (!composer1.ok) return;
+    expect(composer1.key).toEqual({ provider: "cursor", model: "composer-1" });
+
+    const composer15 = resolvePricingKey({
       providerID: "cursor-acp",
       modelID: "cursor-acp/composer-1.5",
     });
-    expect(composer.ok).toBe(true);
-    if (!composer.ok) return;
-    expect(composer.key).toEqual({ provider: "cursor", model: "composer" });
+    expect(composer15.ok).toBe(true);
+    if (!composer15.ok) return;
+    expect(composer15.key).toEqual({ provider: "cursor", model: "composer-1.5" });
+
+    const composer2 = resolvePricingKey({
+      providerID: "cursor-acp",
+      modelID: "cursor-acp/composer-2",
+    });
+    expect(composer2.ok).toBe(true);
+    if (!composer2.ok) return;
+    expect(composer2.key).toEqual({ provider: "cursor", model: "composer-2" });
+
+    const composer2Fast = resolvePricingKey({
+      providerID: "cursor-acp",
+      modelID: "cursor-acp/composer-2-fast",
+    });
+    expect(composer2Fast.ok).toBe(true);
+    if (!composer2Fast.ok) return;
+    expect(composer2Fast.key).toEqual({ provider: "cursor", model: "composer-2-fast" });
+
+    for (const unsupportedModelID of [
+      "cursor-acp/composer",
+      "cursor-acp/composer-fast",
+      "cursor-acp/composer-2fast",
+      "cursor-acp/composer-2-fast-thinking",
+      "cursor-acp/composer-3",
+    ]) {
+      expect(
+        resolvePricingKey({
+          providerID: "cursor-acp",
+          modelID: unsupportedModelID,
+        }).ok,
+      ).toBe(false);
+    }
 
     const gpt = resolvePricingKey({
       providerID: "cursor-acp",
@@ -138,6 +196,34 @@ describe("resolvePricingKey snapshot coverage", () => {
     expect(anthropic.ok).toBe(true);
     if (!anthropic.ok) return;
     expect(anthropic.key).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
+  });
+
+  it("keeps cursor local pricing buckets distinct", () => {
+    expect(lookupCursorLocalCost("auto")).toEqual({
+      input: 1.25,
+      cache_read: 0.25,
+      output: 6,
+    });
+    expect(lookupCursorLocalCost("composer-1")).toEqual({
+      input: 1.25,
+      cache_read: 0.125,
+      output: 10,
+    });
+    expect(lookupCursorLocalCost("composer-1.5")).toEqual({
+      input: 3.5,
+      cache_read: 0.35,
+      output: 17.5,
+    });
+    expect(lookupCursorLocalCost("composer-2")).toEqual({
+      input: 0.5,
+      cache_read: 0.2,
+      output: 2.5,
+    });
+    expect(lookupCursorLocalCost("composer-2-fast")).toEqual({
+      input: 1.5,
+      cache_read: 0.35,
+      output: 7.5,
+    });
   });
 
   it("keeps every Cursor API alias aligned with a priced snapshot key", () => {
