@@ -17,11 +17,7 @@ Quota and `/tokens_*` output are computed from local OpenCode session history.
 
 ## Quick Start
 
-OpenCode `>= 1.2.0` is required.
-
-### Most installs
-
-Add the plugin to your `opencode.json` or `opencode.jsonc`:
+OpenCode `>= 1.2.0` is required. Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
 ```jsonc
 {
@@ -37,12 +33,78 @@ Then:
 
 That is enough for most installs. Providers are auto-detected from your existing OpenCode setup.
 
-## What You Get
+<details>
+<summary><strong>Optional Config</strong></summary>
 
-- Toasts after assistant responses, idle transitions, and compaction events
-- `/quota` for a grouped manual quota report such as `[OpenAI] (Pro)` or `[Copilot] (business)`, with a local call timestamp in the heading
-- `/tokens_*` commands backed by local OpenCode history and a local pricing snapshot, each with a local call timestamp in the heading
-- No model calls to compute the toast or report output
+You do not need extra config to get started. If you want to narrow the plugin to specific providers, use:
+
+```jsonc
+{
+  "experimental": {
+    "quotaToast": {
+      "enabledProviders": ["copilot", "openai", "google-antigravity"]
+    }
+  }
+}
+```
+
+If you want grouped toast layout instead of the default classic toast:
+
+```jsonc
+{
+  "experimental": {
+    "quotaToast": {
+      "toastStyle": "grouped"
+    }
+  }
+}
+```
+
+If Alibaba Coding Plan auth does not include a `tier`, you can set the fallback tier here:
+
+```jsonc
+{
+  "experimental": {
+    "quotaToast": {
+      "alibabaCodingPlanTier": "lite"
+    }
+  }
+}
+```
+
+`/quota` already uses grouped formatting by default, even if toast style stays `classic`.
+
+</details>
+
+## Provider Setup At A Glance
+
+| Provider | Works automatically | Extra setup when needed |
+| --- | --- | --- |
+| GitHub Copilot | Usually yes | Add `copilot-quota-token.json` only for managed org or enterprise billing |
+| OpenAI | Yes | None |
+| Cursor | Needs `opencode-cursor-oauth` and `provider.cursor` | Optional `cursorPlan`, `cursorIncludedApiUsd`, and `cursorBillingCycleStartDay` for monthly API budget tracking |
+| Qwen Code | Needs `opencode-qwencode-auth` | Local free-tier request estimation |
+| Alibaba Coding Plan | Yes | Local request-count estimation |
+| Firmware AI | Usually yes | Optional API key |
+| Chutes AI | Usually yes | Optional API key |
+| Google Antigravity | Needs `opencode-antigravity-auth` | Multi-account account file lives in OpenCode runtime config |
+| Z.ai | Yes | None |
+
+## Commands
+
+| Command | What it shows |
+| --- | --- |
+| `/quota` | Manual grouped quota report with a local call timestamp |
+| `/quota_status` | Concise diagnostics for config, provider availability, account detection, and pricing snapshot health |
+| `/tokens_today` | Tokens used today (calendar day) |
+| `/tokens_daily` | Tokens used in the last 24 hours |
+| `/tokens_weekly` | Tokens used in the last 7 days |
+| `/tokens_monthly` | Tokens used in the last 30 days, including pricing sections |
+| `/tokens_all` | Tokens used across all local history |
+| `/tokens_session` | Tokens used in the current session |
+| `/tokens_between` | Tokens used between two dates: `YYYY-MM-DD YYYY-MM-DD` |
+
+There is no `/token` command. The reporting commands are the `/tokens_*` family.
 
 ## Companion Plugins When Needed
 
@@ -93,78 +155,6 @@ Qwen quota support requires the `opencode-qwencode-auth` [companion auth plugin]
   "plugin": ["opencode-qwencode-auth", "@slkiser/opencode-quota"]
 }
 ```
-
-Quota and `/tokens_*` output are computed from local OpenCode session history.
-
-## Commands
-
-| Command | What it shows |
-| --- | --- |
-| `/quota` | Manual grouped quota report with a local call timestamp |
-| `/quota_status` | Concise diagnostics for config, provider availability, account detection, and pricing snapshot health |
-| `/tokens_today` | Tokens used today (calendar day) |
-| `/tokens_daily` | Tokens used in the last 24 hours |
-| `/tokens_weekly` | Tokens used in the last 7 days |
-| `/tokens_monthly` | Tokens used in the last 30 days, including pricing sections |
-| `/tokens_all` | Tokens used across all local history |
-| `/tokens_session` | Tokens used in the current session |
-| `/tokens_between` | Tokens used between two dates: `YYYY-MM-DD YYYY-MM-DD` |
-
-There is no `/token` command. The reporting commands are the `/tokens_*` family.
-
-## Optional Config
-
-You do not need extra config to get started. If you want to narrow the plugin to specific providers, use:
-
-```jsonc
-{
-  "experimental": {
-    "quotaToast": {
-      "enabledProviders": ["copilot", "openai", "google-antigravity"]
-    }
-  }
-}
-```
-
-If you want grouped toast layout instead of the default classic toast:
-
-```jsonc
-{
-  "experimental": {
-    "quotaToast": {
-      "toastStyle": "grouped"
-    }
-  }
-}
-```
-
-If Alibaba Coding Plan auth does not include a `tier`, you can set the fallback tier here:
-
-```jsonc
-{
-  "experimental": {
-    "quotaToast": {
-      "alibabaCodingPlanTier": "lite"
-    }
-  }
-}
-```
-
-`/quota` already uses grouped formatting by default, even if toast style stays `classic`.
-
-## Provider Setup At A Glance
-
-| Provider | Works automatically | Extra setup when needed |
-| --- | --- | --- |
-| GitHub Copilot | Usually yes | Add `copilot-quota-token.json` only for managed org or enterprise billing |
-| OpenAI | Yes | None |
-| Cursor | Needs `opencode-cursor-oauth` and `provider.cursor` | Optional `cursorPlan`, `cursorIncludedApiUsd`, and `cursorBillingCycleStartDay` for monthly API budget tracking |
-| Qwen Code | Needs `opencode-qwencode-auth` | Local free-tier request estimation |
-| Alibaba Coding Plan | Yes | Local request-count estimation |
-| Firmware AI | Usually yes | Optional API key |
-| Chutes AI | Usually yes | Optional API key |
-| Google Antigravity | Needs `opencode-antigravity-auth` | Multi-account account file lives in OpenCode runtime config |
-| Z.ai | Yes | None |
 
 ## Provider-Specific Notes
 
