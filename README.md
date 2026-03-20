@@ -82,7 +82,7 @@ That is enough for most installs. Providers are auto-detected from your existing
 | **OpenAI** | Yes | OpenCode auth. |
 | **Cursor** | Needs [quick setup](#cursor-quick-setup) | Companion auth plugin + `provider.cursor`. |
 | **Qwen Code** | Needs [quick setup](#qwen-code-quick-setup) | Companion auth plugin. |
-| **Alibaba Coding Plan** | Yes | Native OpenCode auth with local request estimation. |
+| **Alibaba Coding Plan** | Yes | OpenCode auth with local request estimation. |
 | **Firmware AI** | Usually | OpenCode config; API key optional. |
 | **Chutes AI** | Usually | OpenCode config; API key optional. |
 | **Google Antigravity** | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth plugin. |
