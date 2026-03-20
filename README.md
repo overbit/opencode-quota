@@ -9,12 +9,10 @@
 
 **Token reports**: All models and providers in [models.dev](https://models.dev), plus deterministic local pricing for Cursor Auto/Composer and Cursor model aliases that are not on models.dev.
 
-Quota and `/tokens_*` output are computed from local OpenCode session history.
-
 <table>
   <tr>
     <td width="50%" align="center">Quota toast and list of commands</td>
-    <td width="50%" align="center">`/tokens_daily` output</td>
+    <td width="50%" align="center"><code>/tokens_daily</code> output</td>
   </tr>
   <tr>
     <td width="50%">
@@ -25,6 +23,8 @@ Quota and `/tokens_*` output are computed from local OpenCode session history.
     </td>
   </tr>
 </table>
+
+Quota and `/tokens_*` output are computed from local OpenCode session history.
 
 ## Quick Start
 
@@ -78,7 +78,7 @@ If you want grouped toast layout instead of the default classic toast, use:
 
 </details>
 
-## Provider Setup At A Glance
+### Provider Setup At A Glance
 
 | Provider | Works automatically | Extra setup when needed |
 | --- | --- | --- |
