@@ -6,6 +6,7 @@
  */
 
 import type { ChutesResult } from "./types.js";
+import { sanitizeDisplaySnippet, sanitizeDisplayText } from "./display-sanitize.js";
 import { fetchWithTimeout } from "./http.js";
 import { clampPercent } from "./format-utils.js";
 import {
@@ -65,7 +66,7 @@ export async function queryChutesQuota(): Promise<ChutesResult> {
       const text = await resp.text();
       return {
         success: false,
-        error: `Chutes API error ${resp.status}: ${text.slice(0, 120)}`,
+        error: `Chutes API error ${resp.status}: ${sanitizeDisplaySnippet(text, 120)}`,
       };
     }
 
@@ -85,7 +86,7 @@ export async function queryChutesQuota(): Promise<ChutesResult> {
   } catch (err) {
     return {
       success: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: sanitizeDisplayText(err instanceof Error ? err.message : String(err)),
     };
   }
 }

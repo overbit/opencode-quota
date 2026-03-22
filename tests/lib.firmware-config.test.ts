@@ -147,15 +147,16 @@ describe("firmware-config", () => {
       });
     });
 
-    it("resolves {env:VAR_NAME} syntax in opencode.json", async () => {
+    it("rejects arbitrary {env:VAR_NAME} syntax in opencode.json", async () => {
       process.env.MY_FIRMWARE_KEY = "resolved-from-env";
 
       const { existsSync } = await import("fs");
       const { readFile } = await import("fs/promises");
+      const { readAuthFile } = await import("../src/lib/opencode-auth.js");
 
       (existsSync as any).mockImplementation((path: string) => {
         // Only match .json files, not .jsonc files
-        return path.endsWith("opencode.json");
+        return path === join(homedir(), ".config", "opencode", "opencode.json");
       });
 
       (readFile as any).mockResolvedValue(
@@ -169,14 +170,12 @@ describe("firmware-config", () => {
           },
         }),
       );
+      (readAuthFile as any).mockResolvedValue(null);
 
       const { resolveFirmwareApiKey } = await import("../src/lib/firmware-config.js");
       const result = await resolveFirmwareApiKey();
 
-      expect(result).toEqual({
-        key: "resolved-from-env",
-        source: "opencode.json",
-      });
+      expect(result).toBeNull();
     });
 
     it("returns null when {env:VAR_NAME} references unset variable", async () => {
@@ -200,6 +199,21 @@ describe("firmware-config", () => {
         }),
       );
 
+      (readAuthFile as any).mockResolvedValue(null);
+
+      const { resolveFirmwareApiKey } = await import("../src/lib/firmware-config.js");
+      const result = await resolveFirmwareApiKey();
+
+      expect(result).toBeNull();
+    });
+
+    it("ignores workspace-local opencode.json when resolving provider secrets", async () => {
+      const { existsSync } = await import("fs");
+      const { readAuthFile } = await import("../src/lib/opencode-auth.js");
+
+      const workspacePath = join(process.cwd(), "opencode.json");
+
+      (existsSync as any).mockImplementation((path: string) => path === workspacePath);
       (readAuthFile as any).mockResolvedValue(null);
 
       const { resolveFirmwareApiKey } = await import("../src/lib/firmware-config.js");
@@ -323,24 +337,17 @@ describe("firmware-config", () => {
   });
 
   describe("getOpencodeConfigCandidatePaths", () => {
-    it("returns paths in correct priority order", async () => {
+    it("returns trusted global paths only", async () => {
       const { getOpencodeConfigCandidatePaths } = await import("../src/lib/firmware-config.js");
       const paths = getOpencodeConfigCandidatePaths();
 
-      // Should have 4 candidates: local jsonc, local json, global jsonc, global json
-      expect(paths.length).toBe(4);
-
-      // Local paths should come before global paths
-      expect(paths[0].path).toContain(process.cwd());
+      // Should have 2 candidates: global jsonc, global json
+      expect(paths.length).toBe(2);
       expect(paths[0].isJsonc).toBe(true);
-      expect(paths[1].path).toContain(process.cwd());
       expect(paths[1].isJsonc).toBe(false);
 
-      // Global paths
-      expect(paths[2].path).toContain("opencode");
-      expect(paths[2].isJsonc).toBe(true);
-      expect(paths[3].path).toContain("opencode");
-      expect(paths[3].isJsonc).toBe(false);
+      expect(paths[0].path).toContain("opencode");
+      expect(paths[1].path).toContain("opencode");
     });
   });
 });

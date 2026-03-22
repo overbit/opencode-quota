@@ -3,7 +3,7 @@
  *
  * Resolution priority (first wins):
  * 1. Environment variable: FIRMWARE_AI_API_KEY or FIRMWARE_API_KEY
- * 2. opencode.json/opencode.jsonc: provider.firmware.options.apiKey
+ * 2. User/global opencode.json/opencode.jsonc: provider.firmware.options.apiKey
  *    - Supports {env:VAR_NAME} syntax for environment variable references
  * 3. auth.json: firmware.key (legacy/fallback)
  */
@@ -13,8 +13,7 @@ import { readAuthFile } from "./opencode-auth.js";
 import {
   resolveApiKey,
   getApiKeyDiagnostics,
-  getOpencodeConfigCandidatePaths,
-  type ApiKeyResult,
+  getGlobalOpencodeConfigCandidatePaths,
 } from "./api-key-resolver.js";
 
 /** Result of firmware API key resolution */
@@ -22,6 +21,8 @@ export interface FirmwareApiKeyResult {
   key: string;
   source: FirmwareKeySource;
 }
+
+const ALLOWED_FIRMWARE_ENV_VARS = ["FIRMWARE_AI_API_KEY", "FIRMWARE_API_KEY"] as const;
 
 /** Source of the resolved API key */
 export type FirmwareKeySource =
@@ -32,7 +33,7 @@ export type FirmwareKeySource =
   | "auth.json";
 
 /**
- * Extract firmware API key from opencode config object
+ * Extract firmware API key from trusted opencode config object
  *
  * Looks for: provider.firmware.options.apiKey
  */
@@ -53,7 +54,7 @@ function extractFirmwareKeyFromConfig(config: unknown): string | null {
   if (typeof apiKey !== "string" || apiKey.trim().length === 0) return null;
 
   // Resolve {env:VAR_NAME} syntax
-  return resolveEnvTemplate(apiKey.trim());
+  return resolveEnvTemplate(apiKey.trim(), ALLOWED_FIRMWARE_ENV_VARS);
 }
 
 /**
@@ -71,14 +72,14 @@ function extractFirmwareKeyFromAuth(auth: unknown): string | null {
 }
 
 // Re-export for consumers that need path info
-export { getOpencodeConfigCandidatePaths } from "./api-key-resolver.js";
+export { getGlobalOpencodeConfigCandidatePaths as getOpencodeConfigCandidatePaths } from "./api-key-resolver.js";
 
 /**
  * Resolve Firmware API key from all available sources.
  *
  * Priority (first wins):
  * 1. Environment variable: FIRMWARE_AI_API_KEY or FIRMWARE_API_KEY
- * 2. opencode.json/opencode.jsonc: provider.firmware.options.apiKey
+ * 2. User/global opencode.json/opencode.jsonc: provider.firmware.options.apiKey
  * 3. auth.json: firmware.key
  *
  * @returns API key and source, or null if not found
@@ -95,6 +96,7 @@ export async function resolveFirmwareApiKey(): Promise<FirmwareApiKeyResult | nu
       configJsoncSource: "opencode.jsonc",
       extractFromAuth: extractFirmwareKeyFromAuth,
       authSource: "auth.json",
+      getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
     },
     readAuthFile,
   );
@@ -119,5 +121,6 @@ export async function getFirmwareKeyDiagnostics(): Promise<{
   return getApiKeyDiagnostics<FirmwareKeySource>({
     envVarNames: ["FIRMWARE_AI_API_KEY", "FIRMWARE_API_KEY"],
     resolve: resolveFirmwareApiKey,
+    getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
   });
 }

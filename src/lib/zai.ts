@@ -6,6 +6,7 @@
  */
 
 import { clampPercent } from "./format-utils.js";
+import { sanitizeDisplaySnippet, sanitizeDisplayText } from "./display-sanitize.js";
 import { fetchWithTimeout } from "./http.js";
 import { readAuthFile } from "./opencode-auth.js";
 import type {
@@ -39,7 +40,7 @@ export async function queryZaiQuota(): Promise<ZaiResult> {
       const text = await resp.text();
       return {
         success: false,
-        error: `Z.ai API error ${resp.status}: ${text.slice(0, 120)}`,
+        error: `Z.ai API error ${resp.status}: ${sanitizeDisplaySnippet(text, 120)}`,
       };
     }
 
@@ -93,7 +94,7 @@ export async function queryZaiQuota(): Promise<ZaiResult> {
   } catch (err) {
     return {
       success: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: sanitizeDisplayText(err instanceof Error ? err.message : String(err)),
     };
   }
 }

@@ -19,6 +19,7 @@ import type {
   CopilotTier,
   QuotaError,
 } from "./types.js";
+import { sanitizeDisplaySnippet, sanitizeDisplayText } from "./display-sanitize.js";
 import { fetchWithTimeout } from "./http.js";
 import { readAuthFile } from "./opencode-auth.js";
 import { getOpencodeRuntimeDirCandidates } from "./opencode-runtime-paths.js";
@@ -617,17 +618,17 @@ async function readGitHubRestErrorMessage(response: Response): Promise<string> {
       typeof parsed.documentation_url === "string" ? parsed.documentation_url : null;
 
     if (message && documentationUrl) {
-      return `${message} (${documentationUrl})`;
+      return sanitizeDisplayText(`${message} (${documentationUrl})`);
     }
 
     if (message) {
-      return message;
+      return sanitizeDisplayText(message);
     }
   } catch {
     // ignore parse failures
   }
 
-  return text.slice(0, 160);
+  return sanitizeDisplaySnippet(text, 160);
 }
 
 async function fetchGitHubRestJsonOnce<T>(

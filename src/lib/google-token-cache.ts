@@ -95,8 +95,8 @@ async function persist(): Promise<void> {
   if (!memCache) return;
   const path = getGoogleTokenCachePath();
   const dir = dirname(path);
-  await mkdir(dir, { recursive: true });
-  await writeFile(path, JSON.stringify(memCache, null, 2), "utf-8");
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await writeFile(path, JSON.stringify(memCache, null, 2), { encoding: "utf-8", mode: 0o600 });
 }
 
 export async function getCachedAccessToken(params: {

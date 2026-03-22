@@ -1,8 +1,12 @@
 /**
- * Configuration loader for opencode-quota plugin
+ * Configuration loader for opencode-quota plugin.
  *
- * Primary: reads configuration from OpenCode's merged config via the SDK client.
- * Fallback: reads local config files directly.
+ * Security model:
+ * - Config is loaded from opencode.json/opencode.jsonc files directly so we can
+ *   enforce precedence for network-affecting fields.
+ * - User/global config is authoritative for fields that control whether the
+ *   plugin performs automatic network-backed quota fetches.
+ * - SDK config is used only as a fallback when no config files are found.
  */
 
 import type {
@@ -28,6 +32,20 @@ export interface LoadConfigMeta {
 
 export function createLoadConfigMeta(): LoadConfigMeta {
   return { source: "defaults", paths: [] };
+}
+
+const NETWORK_AFFECTING_KEYS = [
+  "enabled",
+  "enabledProviders",
+  "minIntervalMs",
+  "pricingSnapshot",
+  "showOnIdle",
+  "showOnQuestion",
+  "showOnCompact",
+] as const satisfies readonly (keyof QuotaToastConfig)[];
+
+function hasOwnKey<T extends object>(value: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
 }
 
 /**
@@ -209,15 +227,10 @@ export async function loadConfig(
     }
   }
 
-  async function loadFromFiles(): Promise<QuotaToastConfig> {
-    const cwd = process.cwd();
-    const { configDirs } = getOpencodeRuntimeDirCandidates();
-
-    // Order: global first, then local overrides.
-    // Within each location, load .json first, then .jsonc so that
-    // .jsonc takes precedence on key collisions (matching the documented intent).
-    const locations = [...configDirs, cwd];
-
+  async function loadQuotaToastFromLocations(locations: string[]): Promise<{
+    quota: Partial<QuotaToastConfig>;
+    usedPaths: string[];
+  }> {
     const quota: Partial<QuotaToastConfig> = {};
     const usedPaths: string[] = [];
 
@@ -229,30 +242,59 @@ export async function loadConfig(
         if (!parsed || typeof parsed !== "object") continue;
 
         const root = parsed as any;
+        const rawQuotaToast = root?.experimental?.quotaToast;
+        if (!rawQuotaToast || typeof rawQuotaToast !== "object") continue;
 
-        const picks: Array<{ key: string; value: unknown }> = [
-          { key: "experimental.quotaToast", value: root?.experimental?.quotaToast },
-        ];
-
-        const usedKeys: string[] = [];
-        for (const pick of picks) {
-          if (!pick.value || typeof pick.value !== "object") continue;
-          Object.assign(quota, pick.value);
-          usedKeys.push(pick.key);
-        }
-
-        if (usedKeys.length > 0) {
-          usedPaths.push(`${p} (${usedKeys.join(", ")})`);
-        }
+        Object.assign(quota, rawQuotaToast);
+        usedPaths.push(`${p} (experimental.quotaToast)`);
       }
     }
 
-    if (meta) {
-      meta.source = usedPaths.length > 0 ? "files" : "defaults";
-      meta.paths = usedPaths;
+    return { quota, usedPaths };
+  }
+
+  async function loadFromFiles(): Promise<{
+    config: QuotaToastConfig | null;
+    usedPaths: string[];
+  }> {
+    const cwd = process.cwd();
+    const { configDirs } = getOpencodeRuntimeDirCandidates();
+    const globalConfig = await loadQuotaToastFromLocations(configDirs);
+    const localConfig = await loadQuotaToastFromLocations([cwd]);
+
+    const usedPaths = [...globalConfig.usedPaths, ...localConfig.usedPaths];
+    if (usedPaths.length === 0) {
+      return { config: null, usedPaths: [] };
     }
 
-    return normalize(Object.keys(quota).length > 0 ? quota : null);
+    const quota: Partial<QuotaToastConfig> = {
+      ...globalConfig.quota,
+      ...localConfig.quota,
+    };
+
+    // Repo-local config may customize display/formatting, but user/global config
+    // remains authoritative for settings that trigger or shape automatic network activity.
+    for (const key of NETWORK_AFFECTING_KEYS) {
+      if (hasOwnKey(globalConfig.quota, key)) {
+        (quota as Record<string, unknown>)[key] = globalConfig.quota[key];
+      } else if (hasOwnKey(localConfig.quota, key)) {
+        (quota as Record<string, unknown>)[key] = localConfig.quota[key];
+      }
+    }
+
+    return {
+      config: normalize(quota),
+      usedPaths,
+    };
+  }
+
+  const fileConfig = await loadFromFiles();
+  if (fileConfig.config) {
+    if (meta) {
+      meta.source = "files";
+      meta.paths = fileConfig.usedPaths;
+    }
+    return fileConfig.config;
   }
 
   try {
@@ -271,9 +313,13 @@ export async function loadConfig(
       }
       return normalize(quotaToastConfig);
     }
-
-    return await loadFromFiles();
   } catch {
-    return await loadFromFiles();
+    // ignore; fall back to defaults below
   }
+
+  if (meta) {
+    meta.source = "defaults";
+    meta.paths = [];
+  }
+  return DEFAULT_CONFIG;
 }

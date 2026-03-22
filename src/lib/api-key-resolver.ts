@@ -42,6 +42,24 @@ export function getOpencodeConfigCandidatePaths(): ConfigCandidate[] {
 }
 
 /**
+ * Get trusted global-only candidate paths for opencode.json/opencode.jsonc files.
+ *
+ * Provider secrets must not be sourced from repo-local config because the
+ * current workspace may be untrusted.
+ */
+export function getGlobalOpencodeConfigCandidatePaths(): ConfigCandidate[] {
+  const { configDirs } = getOpencodeRuntimeDirCandidates();
+
+  const global: ConfigCandidate[] = [];
+  for (const dir of configDirs) {
+    global.push({ path: join(dir, "opencode.jsonc"), isJsonc: true });
+    global.push({ path: join(dir, "opencode.json"), isJsonc: false });
+  }
+
+  return global;
+}
+
+/**
  * Read and parse an opencode config file.
  *
  * @returns Parsed config with metadata, or null if file doesn't exist or is invalid
@@ -91,6 +109,9 @@ export interface ResolveApiKeyConfig<Source extends string> {
 
   /** Source label for auth.json */
   authSource: Source;
+
+  /** Candidate config file paths to trust for provider-secret lookup. */
+  getConfigCandidates?: () => ConfigCandidate[];
 }
 
 /**
@@ -116,7 +137,7 @@ export async function resolveApiKey<Source extends string>(
   }
 
   // 2. Check opencode.json/opencode.jsonc files
-  const candidates = getOpencodeConfigCandidatePaths();
+  const candidates = config.getConfigCandidates?.() ?? getOpencodeConfigCandidatePaths();
   for (const candidate of candidates) {
     const result = await readOpencodeConfig(candidate.path, candidate.isJsonc);
     if (!result) continue;
@@ -147,6 +168,9 @@ export interface DiagnosticsConfig<Source extends string> {
 
   /** Resolver function to get the current key result */
   resolve: () => Promise<ApiKeyResult<Source> | null>;
+
+  /** Candidate config file paths to report for provider-secret lookup. */
+  getConfigCandidates?: () => ConfigCandidate[];
 }
 
 /**
@@ -172,7 +196,7 @@ export async function getApiKeyDiagnostics<Source extends string>(
   }
 
   // Track config files checked (only if they exist)
-  const candidates = getOpencodeConfigCandidatePaths();
+  const candidates = config.getConfigCandidates?.() ?? getOpencodeConfigCandidatePaths();
   for (const candidate of candidates) {
     if (existsSync(candidate.path)) {
       checkedPaths.push(candidate.path);

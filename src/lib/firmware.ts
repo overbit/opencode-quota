@@ -6,6 +6,7 @@
  */
 
 import type { QuotaError } from "./types.js";
+import { sanitizeDisplaySnippet, sanitizeDisplayText } from "./display-sanitize.js";
 import { fetchWithTimeout } from "./http.js";
 import {
   resolveFirmwareApiKey,
@@ -18,16 +19,6 @@ import {
 interface FirmwareQuotaV1Response {
   credits: number;
   reset: string | null;
-}
-
-/**
- * Strip control characters (ANSI escapes, etc.) from error text
- * to prevent terminal injection when displayed in TUI output.
- */
-function sanitizeErrorText(text: string): string {
-  // Remove ANSI escape sequences and other control characters (except newline/tab)
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]|\x1B\[[0-9;]*[A-Za-z]/g, "");
 }
 
 type FirmwareApiAuth = {
@@ -81,7 +72,7 @@ export async function queryFirmwareQuota(): Promise<FirmwareResult> {
       const text = await resp.text();
       return {
         success: false,
-        error: `Firmware API error ${resp.status}: ${sanitizeErrorText(text.slice(0, 120))}`,
+        error: `Firmware API error ${resp.status}: ${sanitizeDisplaySnippet(text, 120)}`,
       };
     }
 
@@ -102,7 +93,7 @@ export async function queryFirmwareQuota(): Promise<FirmwareResult> {
   } catch (err) {
     return {
       success: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: sanitizeDisplayText(err instanceof Error ? err.message : String(err)),
     };
   }
 }

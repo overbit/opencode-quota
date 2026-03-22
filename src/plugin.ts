@@ -63,6 +63,7 @@ import {
 } from "./lib/command-parsing.js";
 import { handled } from "./lib/command-handled.js";
 import { renderCommandHeading } from "./lib/format-utils.js";
+import { sanitizeDisplayText } from "./lib/display-sanitize.js";
 
 // =============================================================================
 // Types
@@ -329,7 +330,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
           noReply: true,
           // ignored=true keeps this out of future model context while still
           // showing it to the user in the transcript.
-          parts: [{ type: "text", text: output, ignored: true }],
+          parts: [{ type: "text", text: sanitizeDisplayText(output), ignored: true }],
         },
       });
     } catch (err) {
@@ -1166,7 +1167,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     try {
       await typedClient.tui.showToast({
         body: {
-          message,
+          message: sanitizeDisplayText(message),
           variant: "info",
           duration: config.toastDurationMs,
         },

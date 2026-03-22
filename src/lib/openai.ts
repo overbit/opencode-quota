@@ -6,6 +6,7 @@
  */
 
 import type { AuthData, QuotaError } from "./types.js";
+import { sanitizeDisplaySnippet, sanitizeDisplayText } from "./display-sanitize.js";
 import { fetchWithTimeout } from "./http.js";
 import { readAuthFile } from "./opencode-auth.js";
 import { clampPercent } from "./format-utils.js";
@@ -152,7 +153,7 @@ export async function queryOpenAIQuota(): Promise<OpenAIResult> {
       const text = await resp.text();
       return {
         success: false,
-        error: `OpenAI API error ${resp.status}: ${text.slice(0, 120)}`,
+        error: `OpenAI API error ${resp.status}: ${sanitizeDisplaySnippet(text, 120)}`,
       };
     }
 
@@ -208,7 +209,7 @@ export async function queryOpenAIQuota(): Promise<OpenAIResult> {
   } catch (err) {
     return {
       success: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: sanitizeDisplayText(err instanceof Error ? err.message : String(err)),
     };
   }
 }

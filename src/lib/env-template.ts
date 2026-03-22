@@ -14,7 +14,8 @@
  * If the value does not match the pattern, returns the original value unchanged.
  *
  * @param value - The string value to resolve
- * @returns The resolved value, or null if env var is missing/empty
+ * @param allowedEnvVars - Optional allowlist for env vars referenced by templates
+ * @returns The resolved value, or null if env var is missing/empty/disallowed
  *
  * @example
  * // With OPENAI_API_KEY="sk-123" in environment:
@@ -22,11 +23,17 @@
  * resolveEnvTemplate("{env:MISSING_VAR}")    // => null
  * resolveEnvTemplate("literal-value")        // => "literal-value"
  */
-export function resolveEnvTemplate(value: string): string | null {
+export function resolveEnvTemplate(
+  value: string,
+  allowedEnvVars?: readonly string[],
+): string | null {
   const match = value.match(/^\{env:([^}]+)\}$/);
   if (!match) return value;
 
   const envVar = match[1];
+  if (allowedEnvVars && !allowedEnvVars.includes(envVar)) {
+    return null;
+  }
   const envValue = process.env[envVar];
   return envValue && envValue.trim().length > 0 ? envValue.trim() : null;
 }

@@ -83,8 +83,8 @@ That is enough for most installs. Providers are auto-detected from your existing
 | **Cursor** | Needs [quick setup](#cursor-quick-setup) | Companion auth plugin + `provider.cursor`. |
 | **Qwen Code** | Needs [quick setup](#qwen-code-quick-setup) | Companion auth plugin. |
 | **Alibaba Coding Plan** | Yes | OpenCode auth + local request estimation. |
-| **Firmware AI** | Usually | OpenCode config; API key optional. |
-| **Chutes AI** | Usually | OpenCode config; API key optional. |
+| **Firmware AI** | Usually | User/global OpenCode config or env; repo-local secrets ignored. |
+| **Chutes AI** | Usually | User/global OpenCode config or env; repo-local secrets ignored. |
 | **Google Antigravity** | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth plugin. |
 | **Z.ai** | Yes | OpenCode auth. |
 
@@ -280,7 +280,11 @@ Example fallback tier:
 
 If OpenCode already has Firmware configured, it usually works automatically. Optional API key: `provider.firmware.options.apiKey`.
 
-`{env:FIRMWARE_API_KEY}` and literal values are both supported.
+For security, provider secrets are read from environment variables or your user/global OpenCode config only. Repo-local `opencode.json` / `opencode.jsonc` is ignored for `provider.firmware.options.apiKey`.
+
+Allowed env templates are limited to `{env:FIRMWARE_AI_API_KEY}` and `{env:FIRMWARE_API_KEY}`.
+
+Example user/global config (`~/.config/opencode/opencode.jsonc` on Linux/macOS):
 
 ```jsonc
 {
@@ -302,7 +306,11 @@ If OpenCode already has Firmware configured, it usually works automatically. Opt
 
 If OpenCode already has Chutes configured, it usually works automatically. Optional API key: `provider.chutes.options.apiKey`.
 
-`{env:CHUTES_API_KEY}` and literal values are both supported.
+For security, provider secrets are read from environment variables or your user/global OpenCode config only. Repo-local `opencode.json` / `opencode.jsonc` is ignored for `provider.chutes.options.apiKey`.
+
+Allowed env templates are limited to `{env:CHUTES_API_KEY}`.
+
+Example user/global config (`~/.config/opencode/opencode.jsonc` on Linux/macOS):
 
 ```jsonc
 {
@@ -331,6 +339,8 @@ If detection looks wrong, `/quota_status` prints the candidate paths checked for
 ## Configuration Reference
 
 All plugin settings live under `experimental.quotaToast`.
+
+Workspace-local config can still customize display/report behavior, but user/global config is authoritative for network-affecting settings such as `enabled`, `enabledProviders`, `minIntervalMs`, `pricingSnapshot`, `showOnIdle`, `showOnQuestion`, and `showOnCompact`.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
