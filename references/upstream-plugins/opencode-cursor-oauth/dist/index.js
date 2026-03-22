@@ -14,6 +14,22 @@ export const CursorAuthPlugin = async (input) => {
                 const auth = await getAuth();
                 if (!auth || auth.type !== "oauth")
                     return {};
+                // Ensure we have a valid access token, refreshing if expired
+                let accessToken = auth.access;
+                if (!accessToken || auth.expires < Date.now()) {
+                    const refreshed = await refreshCursorToken(auth.refresh);
+                    await input.client.auth.set({
+                        path: { id: CURSOR_PROVIDER_ID },
+                        body: {
+                            type: "oauth",
+                            refresh: refreshed.refresh,
+                            access: refreshed.access,
+                            expires: refreshed.expires,
+                        },
+                    });
+                    accessToken = refreshed.access;
+                }
+                const models = await getCursorModels(accessToken);
                 const port = await startProxy(async () => {
                     const currentAuth = await getAuth();
                     if (currentAuth.type !== "oauth") {
@@ -33,74 +49,9 @@ export const CursorAuthPlugin = async (input) => {
                         return refreshed.access;
                     }
                     return currentAuth.access;
-                });
+                }, models);
                 if (provider) {
-                    if (!provider.models)
-                        provider.models = {};
-                    try {
-                        const models = await getCursorModels(auth.access);
-                        for (const model of models) {
-                            if (provider.models[model.id])
-                                continue;
-                            // Cast needed: OpenCode's internal Model type requires fields
-                            // (interleaved, release_date, variants) not in the plugin SDK type.
-                            provider.models[model.id] = {
-                                id: model.id,
-                                providerID: CURSOR_PROVIDER_ID,
-                                api: {
-                                    id: model.id,
-                                    url: `http://localhost:${port}/v1`,
-                                    npm: "@ai-sdk/openai-compatible",
-                                },
-                                name: model.name,
-                                capabilities: {
-                                    temperature: true,
-                                    reasoning: model.reasoning,
-                                    attachment: false,
-                                    toolcall: true,
-                                    input: {
-                                        text: true,
-                                        audio: false,
-                                        image: false,
-                                        video: false,
-                                        pdf: false,
-                                    },
-                                    output: {
-                                        text: true,
-                                        audio: false,
-                                        image: false,
-                                        video: false,
-                                        pdf: false,
-                                    },
-                                    interleaved: false,
-                                },
-                                cost: {
-                                    input: 0,
-                                    output: 0,
-                                    cache: { read: 0, write: 0 },
-                                },
-                                limit: {
-                                    context: model.contextWindow,
-                                    output: model.maxTokens,
-                                },
-                                status: "active",
-                                options: {},
-                                headers: {},
-                                release_date: "",
-                                variants: {},
-                            };
-                        }
-                    }
-                    catch {
-                        // Model discovery failed — proxy still works with direct model IDs
-                    }
-                    for (const model of Object.values(provider.models)) {
-                        model.cost = {
-                            input: 0,
-                            output: 0,
-                            cache: { read: 0, write: 0 },
-                        };
-                    }
+                    provider.models = buildCursorProviderModels(models, port);
                 }
                 return {
                     baseURL: `http://localhost:${port}/v1`,
@@ -148,4 +99,54 @@ export const CursorAuthPlugin = async (input) => {
         },
     };
 };
+function buildCursorProviderModels(models, port) {
+    return Object.fromEntries(models.map((model) => [
+        model.id,
+        {
+            id: model.id,
+            providerID: CURSOR_PROVIDER_ID,
+            api: {
+                id: model.id,
+                url: `http://localhost:${port}/v1`,
+                npm: "@ai-sdk/openai-compatible",
+            },
+            name: model.name,
+            capabilities: {
+                temperature: true,
+                reasoning: model.reasoning,
+                attachment: false,
+                toolcall: true,
+                input: {
+                    text: true,
+                    audio: false,
+                    image: false,
+                    video: false,
+                    pdf: false,
+                },
+                output: {
+                    text: true,
+                    audio: false,
+                    image: false,
+                    video: false,
+                    pdf: false,
+                },
+                interleaved: false,
+            },
+            cost: {
+                input: 0,
+                output: 0,
+                cache: { read: 0, write: 0 },
+            },
+            limit: {
+                context: model.contextWindow,
+                output: model.maxTokens,
+            },
+            status: "active",
+            options: {},
+            headers: {},
+            release_date: "",
+            variants: {},
+        },
+    ]));
+}
 export default CursorAuthPlugin;

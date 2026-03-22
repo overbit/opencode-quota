@@ -1,7 +1,8 @@
 import { generatePKCE } from "./pkce";
 const CURSOR_LOGIN_URL = "https://cursor.com/loginDeepControl";
 const CURSOR_POLL_URL = "https://api2.cursor.sh/auth/poll";
-const CURSOR_REFRESH_URL = "https://api2.cursor.sh/auth/exchange_user_api_key";
+const CURSOR_REFRESH_URL = process.env.CURSOR_REFRESH_URL ??
+    "https://api2.cursor.sh/auth/exchange_user_api_key";
 const POLL_MAX_ATTEMPTS = 150;
 const POLL_BASE_DELAY = 1000;
 const POLL_MAX_DELAY = 10_000;

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -10,6 +12,29 @@ import {
   lookupCursorLocalCost,
 } from "../src/lib/cursor-pricing.js";
 import { resolvePricingKey } from "../src/lib/quota-stats.js";
+
+const CURSOR_UPSTREAM_MODELS_PATH = new URL(
+  "../references/upstream-plugins/opencode-cursor-oauth/dist/models.js",
+  import.meta.url,
+);
+
+const CURSOR_UPSTREAM_INTENTIONALLY_UNKNOWN_MODELS = new Set([
+  "claude-4-sonnet",
+  "grok-4.20",
+]);
+
+function getCursorUpstreamFallbackModelIds(): string[] {
+  const source = readFileSync(CURSOR_UPSTREAM_MODELS_PATH, "utf8");
+  const fallbackBlock = source.match(/const FALLBACK_MODELS = \[(?<body>[\s\S]*?)\];/);
+  const body = fallbackBlock?.groups?.body;
+  if (!body) {
+    throw new Error("Unable to locate Cursor upstream FALLBACK_MODELS in synced reference");
+  }
+
+  return [...body.matchAll(/\{ id: "([^"]+)"/g)].map((match) => match[1]!).sort((a, b) =>
+    a.localeCompare(b),
+  );
+}
 
 describe("resolvePricingKey snapshot coverage", () => {
   it("resolves every models.dev provider/model pair when source ids are official", () => {
@@ -204,6 +229,22 @@ describe("resolvePricingKey snapshot coverage", () => {
     expect(anthropic.ok).toBe(true);
     if (!anthropic.ok) return;
     expect(anthropic.key).toEqual({ provider: "anthropic", model: "claude-sonnet-4-6" });
+
+    const discoveredAnthropicIds = [
+      ["cursor/claude-4.5-sonnet", { provider: "anthropic", model: "claude-sonnet-4-5" }],
+      ["cursor/claude-4.6-opus", { provider: "anthropic", model: "claude-opus-4-6" }],
+      ["cursor/claude-4.6-sonnet", { provider: "anthropic", model: "claude-sonnet-4-6" }],
+    ] as const;
+
+    for (const [modelID, key] of discoveredAnthropicIds) {
+      const resolved = resolvePricingKey({
+        providerID: "cursor",
+        modelID,
+      });
+      expect(resolved.ok).toBe(true);
+      if (!resolved.ok) continue;
+      expect(resolved.key).toEqual(key);
+    }
   });
 
   it("keeps cursor local pricing buckets distinct", () => {
@@ -268,6 +309,40 @@ describe("resolvePricingKey snapshot coverage", () => {
 
       if (!lookupCost(resolved.key.provider, resolved.key.model)) {
         failures.push(`${alias} -> missing priced snapshot key ${resolved.key.provider}/${resolved.key.model}`);
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it("accounts for every synced upstream Cursor fallback model id", () => {
+    const fallbackModelIds = getCursorUpstreamFallbackModelIds();
+    const intentionallyUnknown = [...CURSOR_UPSTREAM_INTENTIONALLY_UNKNOWN_MODELS].sort((a, b) =>
+      a.localeCompare(b),
+    );
+
+    expect(
+      intentionallyUnknown.filter((modelID) => !fallbackModelIds.includes(modelID)),
+      "Remove stale entries from CURSOR_UPSTREAM_INTENTIONALLY_UNKNOWN_MODELS when upstream fallback ids change.",
+    ).toEqual([]);
+
+    const failures: string[] = [];
+
+    for (const modelID of fallbackModelIds) {
+      const resolved = resolvePricingKey({
+        providerID: "cursor",
+        modelID: `cursor/${modelID}`,
+      });
+
+      if (resolved.ok) {
+        if (CURSOR_UPSTREAM_INTENTIONALLY_UNKNOWN_MODELS.has(modelID)) {
+          failures.push(`${modelID} -> resolved but still allowlisted as intentionally unknown`);
+        }
+        continue;
+      }
+
+      if (!CURSOR_UPSTREAM_INTENTIONALLY_UNKNOWN_MODELS.has(modelID)) {
+        failures.push(`${modelID} -> unresolved upstream fallback model`);
       }
     }
 

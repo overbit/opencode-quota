@@ -70,6 +70,9 @@ const CURSOR_LOCAL_MODEL_ALIASES: Readonly<Record<string, CursorLocalPricingMode
 export const CURSOR_OFFICIAL_MODEL_ALIASES: Readonly<
   Record<string, { providerHint: string; modelHint: string }>
 > = {
+  "claude-4.5-sonnet": { providerHint: "anthropic", modelHint: "claude-sonnet-4-5" },
+  "claude-4.6-opus": { providerHint: "anthropic", modelHint: "claude-opus-4-6" },
+  "claude-4.6-sonnet": { providerHint: "anthropic", modelHint: "claude-sonnet-4-6" },
   "gemini-3-flash": { providerHint: "google", modelHint: "gemini-3-flash-preview" },
   "gemini-3-pro": { providerHint: "google", modelHint: "gemini-3-pro-preview" },
   "gemini-3.1-pro": { providerHint: "google", modelHint: "gemini-3.1-pro-preview" },
