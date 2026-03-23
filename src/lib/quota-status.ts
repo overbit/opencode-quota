@@ -6,6 +6,7 @@ import { getGoogleTokenCachePath } from "./google-token-cache.js";
 import { getAntigravityAccountsCandidatePaths, readAntigravityAccounts } from "./google.js";
 import { getFirmwareKeyDiagnostics } from "./firmware.js";
 import { getChutesKeyDiagnostics } from "./chutes.js";
+import { getNanoGptKeyDiagnostics, queryNanoGptQuota } from "./nanogpt.js";
 import { getCopilotQuotaAuthDiagnostics } from "./copilot.js";
 import {
   computeAlibabaCodingPlanQuota,
@@ -89,6 +90,12 @@ const STATUS_SAMPLE_LIMIT = 5;
 
 function joinOrNone(values: string[]): string {
   return values.length > 0 ? values.join(" | ") : "(none)";
+}
+
+function fmtNanoGptMetric(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  if (Number.isInteger(value)) return String(Math.trunc(value));
+  return value.toFixed(2).replace(/\.?0+$/, "");
 }
 
 function computePricingCoverageFromAgg(agg: Awaited<ReturnType<typeof aggregateUsage>>): {
@@ -179,6 +186,14 @@ function supportedProviderPricingRow(params: {
       id,
       pricing: "partial",
       notes: "API-pool models map to official pricing; Auto/Composer use bundled static Cursor rates",
+    };
+  }
+
+  if (id === "nanogpt") {
+    return {
+      id,
+      pricing: "no",
+      notes: "subscription request quota + account balance (not token-priced)",
     };
   }
 
@@ -450,6 +465,70 @@ export async function buildQuotaStatusReport(params: {
   lines.push(
     `- chutes api key: configured=${chutesDiag.configured ? "true" : "false"}${chutesDiag.source ? ` source=${chutesDiag.source}` : ""}${chutesDiag.checkedPaths.length > 0 ? ` checked=${chutesDiag.checkedPaths.join(" | ")}` : ""}`,
   );
+
+  lines.push("");
+  lines.push("nanogpt:");
+  let nanoGptDiag: { configured: boolean; source: string | null; checkedPaths: string[] } = {
+    configured: false,
+    source: null,
+    checkedPaths: [],
+  };
+  try {
+    nanoGptDiag = await getNanoGptKeyDiagnostics();
+  } catch {
+    // ignore
+  }
+  lines.push(`- api_key_configured: ${nanoGptDiag.configured ? "true" : "false"}`);
+  lines.push(`- api_key_source: ${nanoGptDiag.source ?? "(none)"}`);
+  lines.push(`- api_key_checked_paths: ${joinOrNone(nanoGptDiag.checkedPaths)}`);
+  if (nanoGptDiag.configured) {
+    try {
+      const nanoGptQuota = await queryNanoGptQuota();
+      if (!nanoGptQuota) {
+        lines.push("- live_fetch_error: NanoGPT API key became unavailable before fetch");
+      } else if (!nanoGptQuota.success) {
+        lines.push(`- live_fetch_error: ${nanoGptQuota.error}`);
+      } else {
+        if (nanoGptQuota.subscription) {
+          lines.push(
+            `- subscription_active: ${nanoGptQuota.subscription.active ? "true" : "false"}`,
+          );
+          lines.push(`- subscription_state: ${nanoGptQuota.subscription.state}`);
+          lines.push(
+            `- enforce_daily_limit: ${nanoGptQuota.subscription.enforceDailyLimit ? "true" : "false"}`,
+          );
+          if (nanoGptQuota.subscription.daily) {
+            const daily = nanoGptQuota.subscription.daily;
+            lines.push(
+              `- daily_usage: ${fmtNanoGptMetric(daily.used)}/${fmtNanoGptMetric(daily.limit)} remaining=${fmtNanoGptMetric(daily.remaining)} percent_remaining=${daily.percentRemaining} reset_at=${daily.resetTimeIso ?? "(none)"}`,
+            );
+          }
+          if (nanoGptQuota.subscription.monthly) {
+            const monthly = nanoGptQuota.subscription.monthly;
+            lines.push(
+              `- monthly_usage: ${fmtNanoGptMetric(monthly.used)}/${fmtNanoGptMetric(monthly.limit)} remaining=${fmtNanoGptMetric(monthly.remaining)} percent_remaining=${monthly.percentRemaining} reset_at=${monthly.resetTimeIso ?? "(none)"}`,
+            );
+          }
+          lines.push(
+            `- billing_period_end: ${nanoGptQuota.subscription.currentPeriodEndIso ?? "(none)"}`,
+          );
+          if (nanoGptQuota.subscription.graceUntilIso) {
+            lines.push(`- grace_until: ${nanoGptQuota.subscription.graceUntilIso}`);
+          }
+        }
+        lines.push(
+          `- balance_usd: ${typeof nanoGptQuota.balance?.usdBalance === "number" ? fmtUsdAmount(nanoGptQuota.balance.usdBalance) : "(none)"}`,
+        );
+        lines.push(`- balance_nano: ${nanoGptQuota.balance?.nanoBalanceRaw ?? "(none)"}`);
+        for (const entry of nanoGptQuota.endpointErrors ?? []) {
+          lines.push(`- live_error_${entry.endpoint}: ${entry.message}`);
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lines.push(`- live_fetch_error: ${msg}`);
+    }
+  }
 
   const copilotDiag = getCopilotQuotaAuthDiagnostics(authData);
   lines.push("");

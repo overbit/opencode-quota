@@ -8,6 +8,7 @@ export const QUOTA_PROVIDER_LABELS: Readonly<Record<string, string>> = {
   "qwen-code": "Qwen",
   "alibaba-coding-plan": "Alibaba Coding Plan",
   zai: "Z.ai",
+  nanogpt: "NanoGPT",
 };
 
 export const QUOTA_PROVIDER_ID_SYNONYMS: Readonly<Record<string, string>> = {
@@ -19,6 +20,7 @@ export const QUOTA_PROVIDER_ID_SYNONYMS: Readonly<Record<string, string>> = {
   "@rama_nigg/open-cursor": "cursor",
   qwen: "qwen-code",
   alibaba: "alibaba-coding-plan",
+  "nano-gpt": "nanogpt",
 };
 
 export function normalizeQuotaProviderId(id: string): string {

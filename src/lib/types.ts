@@ -154,6 +154,11 @@ export interface AlibabaAuthData {
   [key: string]: unknown;
 }
 
+export interface NanoGptAuthData {
+  type: "api";
+  key: string;
+}
+
 /**
  * Copilot subscription tier.
  * See: https://docs.github.com/en/copilot/about-github-copilot/subscription-plans-for-github-copilot
@@ -245,6 +250,8 @@ export interface AuthData {
     type: string;
     key?: string;
   };
+  nanogpt?: NanoGptAuthData;
+  "nano-gpt"?: NanoGptAuthData;
   cursor?: CursorOAuthAuthData;
   "opencode-qwencode-auth"?: QwenOAuthAuthData;
   alibaba?: AlibabaAuthData;

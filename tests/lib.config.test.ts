@@ -114,4 +114,22 @@ describe("loadConfig", () => {
     expect(invalid.pricingSnapshot.source).toBe("auto");
     expect(invalid.pricingSnapshot.autoRefresh).toBe(5);
   });
+
+  it("normalizes enabled provider aliases to canonical ids", async () => {
+    const cfg = await loadConfig({
+      config: {
+        get: async () => ({
+          data: {
+            experimental: {
+              quotaToast: {
+                enabledProviders: ["nano-gpt", "nanogpt", "open-cursor"],
+              },
+            },
+          },
+        }),
+      },
+    });
+
+    expect(cfg.enabledProviders).toEqual(["nanogpt", "cursor"]);
+  });
 });

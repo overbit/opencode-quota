@@ -45,6 +45,15 @@ const pricingMocks = vi.hoisted(() => ({
   getPricingSnapshotSource: vi.fn(() => "bundled"),
 }));
 
+const nanoGptMocks = vi.hoisted(() => ({
+  getNanoGptKeyDiagnostics: vi.fn(async () => ({
+    configured: false,
+    source: null,
+    checkedPaths: [],
+  })),
+  queryNanoGptQuota: vi.fn(async () => null),
+}));
+
 vi.mock("fs/promises", () => ({
   stat: fsPromiseMocks.stat,
 }));
@@ -87,6 +96,11 @@ vi.mock("../src/lib/chutes.js", () => ({
     source: null,
     checkedPaths: [],
   })),
+}));
+
+vi.mock("../src/lib/nanogpt.js", () => ({
+  getNanoGptKeyDiagnostics: nanoGptMocks.getNanoGptKeyDiagnostics,
+  queryNanoGptQuota: nanoGptMocks.queryNanoGptQuota,
 }));
 
 vi.mock("../src/lib/copilot.js", () => ({
@@ -184,7 +198,7 @@ vi.mock("../src/lib/modelsdev-pricing.js", () => ({
 }));
 
 vi.mock("../src/providers/registry.js", () => ({
-  getProviders: () => [{ id: "copilot" }, { id: "cursor" }],
+  getProviders: () => [{ id: "copilot" }, { id: "cursor" }, { id: "nanogpt" }],
 }));
 
 vi.mock("../src/lib/version.js", () => ({
@@ -257,6 +271,10 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain("- alibaba auth configured: false");
     expect(report).toContain("- alibaba coding plan fallback tier: lite");
     expect(report).toContain("- alibaba_coding_plan: (none)");
+    expect(report).toContain("nanogpt:");
+    expect(report).toContain("- api_key_configured: false");
+    expect(report).toContain("- api_key_source: (none)");
+    expect(report).toContain("- api_key_checked_paths: (none)");
     expect(report).toContain("cursor:");
     expect(report).toContain("- plan: Pro");
     expect(report).toContain("- included_api_usd: $20.00");
@@ -280,6 +298,89 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain(
       "- remaining_quota_note: valid PAT access can query billing usage, but pooled org usage does not provide a true per-user remaining quota",
     );
+    expect(report).toContain(
+      "- nanogpt: pricing=no (subscription request quota + account balance (not token-priced))",
+    );
+  });
+
+  it("reports NanoGPT live subscription and balance diagnostics when configured", async () => {
+    nanoGptMocks.getNanoGptKeyDiagnostics.mockResolvedValueOnce({
+      configured: true,
+      source: "env:NANOGPT_API_KEY",
+      checkedPaths: ["env:NANOGPT_API_KEY"],
+    });
+    nanoGptMocks.queryNanoGptQuota.mockResolvedValueOnce({
+      success: true,
+      subscription: {
+        active: false,
+        state: "grace",
+        enforceDailyLimit: true,
+        daily: {
+          used: 5,
+          limit: 5000,
+          remaining: 4995,
+          percentRemaining: 100,
+          resetTimeIso: "2026-01-02T00:00:00.000Z",
+        },
+        monthly: {
+          used: 45,
+          limit: 60000,
+          remaining: 59955,
+          percentRemaining: 100,
+          resetTimeIso: "2026-02-01T00:00:00.000Z",
+        },
+        currentPeriodEndIso: "2026-02-13T23:59:59.000Z",
+        graceUntilIso: "2026-01-09T00:00:00.000Z",
+      },
+      balance: {
+        usdBalance: 129.46956147,
+        usdBalanceRaw: "129.46956147",
+        nanoBalanceRaw: "26.71801147",
+      },
+      endpointErrors: [
+        {
+          endpoint: "balance",
+          message: "NanoGPT API error 401: Unauthorized",
+        },
+      ],
+    });
+
+    const { buildQuotaStatusReport } = await import("../src/lib/quota-status.js");
+    const report = await buildQuotaStatusReport({
+      configSource: "test",
+      configPaths: [],
+      enabledProviders: ["nanogpt"],
+      alibabaCodingPlanTier: "lite",
+      cursorPlan: "none",
+      pricingSnapshotSource: "auto",
+      onlyCurrentModel: false,
+      providerAvailability: [
+        {
+          id: "nanogpt",
+          enabled: true,
+          available: true,
+        },
+      ],
+      generatedAtMs: Date.UTC(2026, 2, 12, 12, 45, 0),
+    });
+
+    expect(report).toContain("nanogpt:");
+    expect(report).toContain("- api_key_configured: true");
+    expect(report).toContain("- api_key_source: env:NANOGPT_API_KEY");
+    expect(report).toContain("- subscription_active: false");
+    expect(report).toContain("- subscription_state: grace");
+    expect(report).toContain("- enforce_daily_limit: true");
+    expect(report).toContain(
+      "- daily_usage: 5/5000 remaining=4995 percent_remaining=100 reset_at=2026-01-02T00:00:00.000Z",
+    );
+    expect(report).toContain(
+      "- monthly_usage: 45/60000 remaining=59955 percent_remaining=100 reset_at=2026-02-01T00:00:00.000Z",
+    );
+    expect(report).toContain("- billing_period_end: 2026-02-13T23:59:59.000Z");
+    expect(report).toContain("- grace_until: 2026-01-09T00:00:00.000Z");
+    expect(report).toContain("- balance_usd: $129.47");
+    expect(report).toContain("- balance_nano: 26.71801147");
+    expect(report).toContain("- live_error_balance: NanoGPT API error 401: Unauthorized");
   });
 
   it("reports enterprise billing scope and token compatibility notes", async () => {

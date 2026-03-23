@@ -5,7 +5,7 @@
 - Automatic quota toasts after assistant responses
 - Manual `/quota`, `/pricing_refresh`, and `/tokens_*` commands for deeper local reporting with zero context window pollution
 
-**Quota providers**: GitHub Copilot, OpenAI (Plus/Pro), Cursor, Qwen Code, Alibaba Coding Plan, Chutes AI, Firmware AI, Google Antigravity, and Z.ai coding plan.
+**Quota providers**: GitHub Copilot, OpenAI (Plus/Pro), Cursor, Qwen Code, Alibaba Coding Plan, Chutes AI, Firmware AI, Google Antigravity, Z.ai coding plan, and NanoGPT.
 
 **Token reports**: All models and providers in [models.dev](https://models.dev), plus deterministic local pricing for Cursor Auto/Composer and Cursor model aliases that are not on models.dev.
 
@@ -24,7 +24,7 @@
   </tr>
 </table>
 
-Quota and `/tokens_*` output are computed from local OpenCode session history.
+`/tokens_*` output is computed from local OpenCode session history. Quota rows use each provider's existing local auth plus deterministic local state or live provider quota endpoints, depending on the provider.
 
 ## Quick Start
 
@@ -85,6 +85,7 @@ That is enough for most installs. Providers are auto-detected from your existing
 | **Alibaba Coding Plan** | Yes | OpenCode auth + local request estimation. |
 | **Firmware AI** | Usually | User/global OpenCode config or env; repo-local secrets ignored. |
 | **Chutes AI** | Usually | User/global OpenCode config or env; repo-local secrets ignored. |
+| **NanoGPT** | Usually | User/global OpenCode config, env, or auth.json; repo-local secrets ignored. |
 | **Google Antigravity** | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth plugin. |
 | **Z.ai** | Yes | OpenCode auth. |
 
@@ -333,6 +334,35 @@ Example user/global config (`~/.config/opencode/opencode.jsonc` on Linux/macOS):
 See [Google Antigravity quick setup](#google-antigravity-quick-setup). Credentials live under the OpenCode runtime config directory.
 
 If detection looks wrong, `/quota_status` prints the candidate paths checked for `antigravity-accounts.json`.
+
+</details>
+
+<a id="nanogpt-notes"></a>
+<details>
+<summary><strong>NanoGPT</strong></summary>
+
+NanoGPT uses live NanoGPT subscription usage and balance endpoints, so `/quota`, grouped/classic toasts, and `/quota_status` can show daily quota, monthly quota, and account balance in real time.
+
+- Canonical provider id is `nanogpt`. Alias `nano-gpt` also normalizes in `enabledProviders`.
+- Optional API key: `provider.nanogpt.options.apiKey` or `provider["nano-gpt"].options.apiKey`.
+- For security, provider secrets are read from `NANOGPT_API_KEY`, `NANO_GPT_API_KEY`, your user/global OpenCode config, or `auth.json`. Repo-local `opencode.json` / `opencode.jsonc` is ignored for NanoGPT secrets.
+- Allowed env templates are limited to `{env:NANOGPT_API_KEY}` and `{env:NANO_GPT_API_KEY}`.
+- `/quota_status` prints a `nanogpt` section with live subscription state, daily/monthly usage windows, endpoint errors, and balance details.
+- NanoGPT quota reflects subscription-covered requests and account balance. It is not token-priced in `/tokens_*`.
+
+Example user/global config (`~/.config/opencode/opencode.jsonc` on Linux/macOS):
+
+```jsonc
+{
+  "provider": {
+    "nanogpt": {
+      "options": {
+        "apiKey": "{env:NANOGPT_API_KEY}"
+      }
+    }
+  }
+}
+```
 
 </details>
 
