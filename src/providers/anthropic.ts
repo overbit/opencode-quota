@@ -1,10 +1,7 @@
 /**
  * Anthropic Claude provider wrapper.
  *
- * Normalizes Anthropic quota windows into generic toast entries.
- *
- * Surfaces the 5-hour and 7-day rate-limit windows from the Anthropic OAuth
- * usage API using Claude Code credentials.
+ * Normalizes Claude CLI-exposed quota windows into generic toast entries.
  */
 
 import type {
@@ -19,6 +16,10 @@ import {
 } from "../lib/anthropic.js";
 import { isAnyProviderIdAvailable } from "../lib/provider-availability.js";
 
+export function getAnthropicNoDataMessage(): string {
+  return "Quota unavailable via local Claude CLI";
+}
+
 export const anthropicProvider: QuotaProvider = {
   id: "anthropic",
 
@@ -32,7 +33,9 @@ export const anthropicProvider: QuotaProvider = {
       return false;
     }
 
-    return await hasAnthropicCredentialsConfigured();
+    return await hasAnthropicCredentialsConfigured({
+      binaryPath: ctx.config?.anthropicBinaryPath,
+    });
   },
 
   matchesCurrentModel(model: string): boolean {
@@ -40,7 +43,9 @@ export const anthropicProvider: QuotaProvider = {
   },
 
   async fetch(ctx: QuotaProviderContext): Promise<QuotaProviderResult> {
-    const result = await queryAnthropicQuota();
+    const result = await queryAnthropicQuota({
+      binaryPath: ctx.config?.anthropicBinaryPath,
+    });
 
     if (!result) {
       return { attempted: false, entries: [], errors: [] };

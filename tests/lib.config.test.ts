@@ -115,6 +115,30 @@ describe("loadConfig", () => {
     expect(invalid.pricingSnapshot.autoRefresh).toBe(5);
   });
 
+  it("defaults anthropicBinaryPath and trims explicit overrides", async () => {
+    const defaults = await loadConfig({
+      config: { get: async () => ({ data: { experimental: { quotaToast: {} } } }) },
+    });
+    expect(defaults.anthropicBinaryPath).toBe("claude");
+
+    const explicit = await loadConfig({
+      config: {
+        get: async () => ({
+          data: {
+            experimental: {
+              quotaToast: {
+                anthropicBinaryPath: "  /Applications/Claude Code.app/Contents/MacOS/claude  ",
+              },
+            },
+          },
+        }),
+      },
+    });
+    expect(explicit.anthropicBinaryPath).toBe(
+      "/Applications/Claude Code.app/Contents/MacOS/claude",
+    );
+  });
+
   it("normalizes enabled provider aliases to canonical ids", async () => {
     const cfg = await loadConfig({
       config: {

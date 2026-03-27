@@ -4,6 +4,7 @@ import { getAuthPath, getAuthPaths, readAuthFileCached } from "./opencode-auth.j
 import { getOpencodeRuntimeDirs } from "./opencode-runtime-paths.js";
 import { getGoogleTokenCachePath } from "./google-token-cache.js";
 import { getAntigravityAccountsCandidatePaths, readAntigravityAccounts } from "./google.js";
+import { getAnthropicDiagnostics } from "./anthropic.js";
 import { getFirmwareKeyDiagnostics } from "./firmware.js";
 import { getChutesKeyDiagnostics } from "./chutes.js";
 import { getNanoGptKeyDiagnostics, queryNanoGptQuota } from "./nanogpt.js";
@@ -44,6 +45,7 @@ import { aggregateUsage } from "./quota-stats.js";
 import { fmtUsdAmount, renderCommandHeading } from "./format-utils.js";
 import { inspectCursorAuthPresence, inspectCursorOpenCodeIntegration } from "./cursor-detection.js";
 import { getCurrentCursorUsageSummary } from "./cursor-usage.js";
+import { sanitizeDisplayText } from "./display-sanitize.js";
 import {
   getCursorPlanDisplayName,
   getEffectiveCursorIncludedApiUsd,
@@ -248,6 +250,7 @@ export async function buildQuotaStatusReport(params: {
   configSource: string;
   configPaths: string[];
   enabledProviders: string[] | "auto";
+  anthropicBinaryPath?: string;
   alibabaCodingPlanTier: "lite" | "pro";
   cursorPlan: CursorQuotaPlan;
   cursorIncludedApiUsd?: number;
@@ -348,6 +351,42 @@ export async function buildQuotaStatusReport(params: {
   lines.push(
     `- alibaba_coding_plan: ${alibabaCodingPlanAuth.state === "configured" ? alibabaCodingPlanAuth.tier : alibabaCodingPlanAuth.state === "invalid" ? "invalid" : "(none)"}`,
   );
+
+  lines.push("");
+  lines.push("anthropic:");
+  try {
+    const anthropicDiagnostics = await getAnthropicDiagnostics({
+      binaryPath: params.anthropicBinaryPath,
+    });
+    lines.push(`- cli_installed: ${anthropicDiagnostics.installed ? "true" : "false"}`);
+    lines.push(`- cli_version: ${anthropicDiagnostics.version ?? "(none)"}`);
+    lines.push(`- auth_status: ${anthropicDiagnostics.authStatus}`);
+    lines.push(`- quota_supported: ${anthropicDiagnostics.quotaSupported ? "true" : "false"}`);
+    lines.push(
+      `- quota_source: ${anthropicDiagnostics.quotaSource === "none" ? "(none)" : anthropicDiagnostics.quotaSource}`,
+    );
+    lines.push(
+      `- checked_commands: ${anthropicDiagnostics.checkedCommands.length > 0 ? anthropicDiagnostics.checkedCommands.join(" | ") : "(none)"}`,
+    );
+    if (anthropicDiagnostics.message) {
+      lines.push(`- message: ${anthropicDiagnostics.message}`);
+    }
+    if (anthropicDiagnostics.quotaSupported && anthropicDiagnostics.quota) {
+      lines.push(
+        `- five_hour_remaining: ${anthropicDiagnostics.quota.five_hour.percentRemaining}% reset_at=${anthropicDiagnostics.quota.five_hour.resetTimeIso ?? "(none)"}`,
+      );
+      lines.push(
+        `- seven_day_remaining: ${anthropicDiagnostics.quota.seven_day.percentRemaining}% reset_at=${anthropicDiagnostics.quota.seven_day.resetTimeIso ?? "(none)"}`,
+      );
+    }
+  } catch (err) {
+    lines.push("- cli_installed: false");
+    lines.push(
+      `- message: failed to probe Claude CLI${
+        err ? `: ${sanitizeDisplayText(err instanceof Error ? err.message : String(err))}` : ""
+      }`,
+    );
+  }
 
   const cursorPlanLabel = getCursorPlanDisplayName(params.cursorPlan);
   const cursorIncludedApiUsd = getEffectiveCursorIncludedApiUsd({

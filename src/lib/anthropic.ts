@@ -1,35 +1,32 @@
 /**
- * Anthropic Claude quota fetcher.
+ * Anthropic Claude quota probing.
  *
- * Reads a Claude Code OAuth access token from local Claude credentials and
- * queries the Anthropic usage API to surface 5-hour and 7-day rate-limit
- * windows.
- *
- * Supported credential sources:
- *   1. ~/.claude/.credentials.json → claudeAiOauth.accessToken
- *   2. CLAUDE_CODE_OAUTH_TOKEN environment variable
+ * Uses the local Claude CLI/runtime to detect install/auth state and surface
+ * quota windows only when the official runtime exposes them locally. This
+ * module does not read Claude consumer OAuth tokens or call Anthropic's OAuth
+ * usage endpoint directly.
  */
 
-import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { execFile } from "child_process";
 
 import { sanitizeDisplaySnippet, sanitizeDisplayText } from "./display-sanitize.js";
-import { fetchWithTimeout } from "./http.js";
 
-const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
-const ANTHROPIC_BETA_HEADER = "oauth-2025-04-20";
-const CREDENTIALS_PATH = join(homedir(), ".claude", ".credentials.json");
-
-// =============================================================================
-// Types
-// =============================================================================
+const DEFAULT_CLAUDE_BINARY = "claude";
+const CLAUDE_COMMAND_TIMEOUT_MS = 3_000;
+const ANTHROPIC_DIAGNOSTICS_TTL_MS = 5_000;
 
 export interface AnthropicQuotaWindow {
-  /** Used percentage [0..100]. */
-  used_percentage: number;
-  /** ISO timestamp when this window resets. */
-  resets_at: string;
+  utilization?: number;
+  used_percentage?: number;
+  usedPercentage?: number;
+  used_percent?: number;
+  usedPercent?: number;
+  percent_used?: number;
+  percentUsed?: number;
+  resets_at?: string;
+  resetsAt?: string;
+  reset_at?: string;
+  resetAt?: string;
 }
 
 export interface AnthropicUsageResponse {
@@ -49,72 +46,101 @@ export interface AnthropicQuotaError {
 }
 
 export type AnthropicResult = AnthropicQuotaResult | AnthropicQuotaError | null;
+export type AnthropicAuthStatus = "authenticated" | "unauthenticated" | "unknown";
+export type AnthropicQuotaSource = "claude-auth-status-json" | "none";
 
-interface ClaudeCredentials {
-  claudeAiOauth?: {
-    accessToken?: string;
-    expiresAt?: number;
-  };
+export interface AnthropicDiagnostics {
+  installed: boolean;
+  version: string | null;
+  authStatus: AnthropicAuthStatus;
+  quotaSupported: boolean;
+  quotaSource: AnthropicQuotaSource;
+  checkedCommands: string[];
+  message?: string;
+  quota?: AnthropicQuotaResult;
 }
 
-export interface ResolvedAnthropicCredentials {
-  accessToken: string;
-  expiresAt?: number;
-  source: "file" | "env";
+export interface AnthropicProbeOptions {
+  binaryPath?: string;
 }
 
-// =============================================================================
-// Credential loading
-// =============================================================================
+type ClaudeCommandResult = {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  spawnErrorCode?: number | string;
+  errorMessage?: string;
+};
 
-function normalizeOptionalTimestamp(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+export type ClaudeCommandInvocation = {
+  file: string;
+  args: string[];
+  display: string;
+};
+
+type AnthropicDiagnosticsCacheEntry = {
+  timestamp: number;
+  value: AnthropicDiagnostics | null;
+  inFlight?: Promise<AnthropicDiagnostics>;
+};
+
+type ParsedAuthProbe = {
+  authStatus: AnthropicAuthStatus;
+  message?: string;
+  jsonPayload?: unknown;
+  unsupportedCommand?: boolean;
+};
+
+const diagnosticsCache = new Map<string, AnthropicDiagnosticsCacheEntry>();
+
+export function resolveAnthropicBinaryPath(binaryPath?: string): string {
+  const trimmed = binaryPath?.trim();
+  return trimmed ? trimmed : DEFAULT_CLAUDE_BINARY;
 }
 
-function readCredentialsFile(): ClaudeCredentials | null {
-  if (!existsSync(CREDENTIALS_PATH)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(CREDENTIALS_PATH, "utf-8");
-    return JSON.parse(content) as ClaudeCredentials;
-  } catch {
-    return null;
-  }
+function formatCommandDisplayArg(value: string): string {
+  const sanitized = sanitizeDisplayText(value);
+  return /[\s"]/u.test(sanitized) ? JSON.stringify(sanitized) : sanitized;
 }
 
-export function resolveAnthropicCredentialsFromFile(
-  credentials: ClaudeCredentials | null | undefined,
-): ResolvedAnthropicCredentials | null {
-  const fileToken = credentials?.claudeAiOauth?.accessToken?.trim();
-  if (fileToken) {
+function formatCommandDisplay(parts: string[]): string {
+  return parts.map(formatCommandDisplayArg).join(" ");
+}
+
+function quoteWindowsCmdArg(value: string): string {
+  const escaped = value.replace(/(\\*)"/g, "$1$1\\\"").replace(/(\\+)$/g, "$1$1");
+  return `"${escaped}"`;
+}
+
+export function buildClaudeCommandInvocation(
+  binaryPath: string,
+  args: string[],
+  runtime: { platform?: NodeJS.Platform; comspec?: string } = {},
+): ClaudeCommandInvocation {
+  const resolvedBinaryPath = resolveAnthropicBinaryPath(binaryPath);
+  const display = formatCommandDisplay([resolvedBinaryPath, ...args]);
+
+  if ((runtime.platform ?? process.platform) === "win32") {
     return {
-      accessToken: fileToken,
-      expiresAt: normalizeOptionalTimestamp(credentials?.claudeAiOauth?.expiresAt),
-      source: "file",
+      file: runtime.comspec?.trim() || process.env["ComSpec"]?.trim() || "cmd.exe",
+      args: ["/d", "/s", "/c", [resolvedBinaryPath, ...args].map(quoteWindowsCmdArg).join(" ")],
+      display,
     };
   }
 
-  const envToken = process.env["CLAUDE_CODE_OAUTH_TOKEN"]?.trim();
-  if (envToken) {
-    return { accessToken: envToken, source: "env" };
-  }
-
-  return null;
+  return {
+    file: resolvedBinaryPath,
+    args: [...args],
+    display,
+  };
 }
 
-export async function resolveAnthropicCredentials(): Promise<ResolvedAnthropicCredentials | null> {
-  return resolveAnthropicCredentialsFromFile(readCredentialsFile());
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
-
-export async function hasAnthropicCredentialsConfigured(): Promise<boolean> {
-  return (await resolveAnthropicCredentials()) !== null;
-}
-
-// =============================================================================
-// Quota fetch
-// =============================================================================
 
 function normalizeResetTimeIso(value: unknown): string | undefined {
   if (typeof value !== "string") {
@@ -134,112 +160,473 @@ function normalizeResetTimeIso(value: unknown): string | undefined {
   return new Date(parsed).toISOString();
 }
 
-function parseUsageResponse(data: unknown): AnthropicQuotaResult | null {
-  if (!data || typeof data !== "object") return null;
-  const obj = data as Record<string, unknown>;
+function normalizeUsagePercent(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
 
-  const fiveHour = obj["five_hour"] as Record<string, unknown> | undefined;
-  const sevenDay = obj["seven_day"] as Record<string, unknown> | undefined;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
 
-  if (!fiveHour || !sevenDay) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
 
-  const fiveUsed = Number(fiveHour["used_percentage"] ?? fiveHour["usedPercentage"]);
-  const sevenUsed = Number(sevenDay["used_percentage"] ?? sevenDay["usedPercentage"]);
-
-  if (!Number.isFinite(fiveUsed) || !Number.isFinite(sevenUsed)) return null;
-
-  return {
-    success: true,
-    five_hour: {
-      percentRemaining: Math.max(0, Math.min(100, Math.round(100 - fiveUsed))),
-      resetTimeIso: normalizeResetTimeIso(fiveHour["resets_at"] ?? fiveHour["resetsAt"]),
-    },
-    seven_day: {
-      percentRemaining: Math.max(0, Math.min(100, Math.round(100 - sevenUsed))),
-      resetTimeIso: normalizeResetTimeIso(sevenDay["resets_at"] ?? sevenDay["resetsAt"]),
-    },
-  };
+  return undefined;
 }
 
-/**
- * Query the Anthropic OAuth usage API for Claude rate-limit windows.
- *
- * Returns null when no credentials are found (provider not configured).
- * Returns an error result when credentials exist but the fetch fails.
- */
-export async function queryAnthropicQuota(): Promise<AnthropicResult> {
-  const resolved = await resolveAnthropicCredentials();
+function getWindowUsedPercent(window: Record<string, unknown>): number | undefined {
+  const candidates = [
+    window["utilization"],
+    window["used_percentage"],
+    window["usedPercentage"],
+    window["used_percent"],
+    window["usedPercent"],
+    window["percent_used"],
+    window["percentUsed"],
+  ];
 
-  if (!resolved) {
+  for (const candidate of candidates) {
+    const normalized = normalizeUsagePercent(candidate);
+    if (normalized !== undefined) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function getWindowResetTimeIso(window: Record<string, unknown>): string | undefined {
+  return normalizeResetTimeIso(
+    window["resets_at"] ?? window["resetsAt"] ?? window["reset_at"] ?? window["resetAt"],
+  );
+}
+
+function parseQuotaWindow(window: unknown): { percentRemaining: number; resetTimeIso?: string } | null {
+  const record = asRecord(window);
+  if (!record) {
     return null;
   }
 
-  if (resolved.expiresAt !== undefined && resolved.expiresAt <= Date.now()) {
+  const used = getWindowUsedPercent(record);
+  if (used === undefined) {
+    return null;
+  }
+
+  return {
+    percentRemaining: Math.max(0, Math.min(100, Math.round(100 - used))),
+    resetTimeIso: getWindowResetTimeIso(record),
+  };
+}
+
+function getUsageRoots(data: unknown): Record<string, unknown>[] {
+  const root = asRecord(data);
+  if (!root) {
+    return [];
+  }
+
+  const candidates = [
+    root,
+    asRecord(root["quota"]),
+    asRecord(root["usage"]),
+    asRecord(root["rate_limits"]),
+    asRecord(root["rateLimits"]),
+    asRecord(root["oauth_usage"]),
+    asRecord(root["oauthUsage"]),
+  ];
+
+  const seen = new Set<Record<string, unknown>>();
+  const roots: Record<string, unknown>[] = [];
+
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    roots.push(candidate);
+  }
+
+  return roots;
+}
+
+function parseUsageResponse(data: unknown): AnthropicQuotaResult | null {
+  for (const root of getUsageRoots(data)) {
+    const fiveHour = parseQuotaWindow(root["five_hour"] ?? root["fiveHour"]);
+    const sevenDay = parseQuotaWindow(root["seven_day"] ?? root["sevenDay"]);
+
+    if (!fiveHour || !sevenDay) {
+      continue;
+    }
+
     return {
-      success: false,
-      error: "Anthropic token expired; refresh ~/.claude/.credentials.json or CLAUDE_CODE_OAUTH_TOKEN",
+      success: true,
+      five_hour: fiveHour,
+      seven_day: sevenDay,
     };
   }
 
-  let response: Response;
-  try {
-    response = await fetchWithTimeout(ANTHROPIC_USAGE_URL, {
-      headers: {
-        Authorization: `Bearer ${resolved.accessToken}`,
-        "anthropic-beta": ANTHROPIC_BETA_HEADER,
-      },
+  return null;
+}
+
+function extractAuthBoolean(data: unknown): boolean | undefined {
+  const record = asRecord(data);
+  if (!record) {
+    return undefined;
+  }
+
+  for (const candidate of [
+    record["authenticated"],
+    record["isAuthenticated"],
+    record["loggedIn"],
+  ]) {
+    if (typeof candidate === "boolean") {
+      return candidate;
+    }
+  }
+
+  const authRecord = asRecord(record["auth"]);
+  if (authRecord) {
+    for (const candidate of [authRecord["authenticated"], authRecord["loggedIn"]]) {
+      if (typeof candidate === "boolean") {
+        return candidate;
+      }
+    }
+  }
+
+  const status = record["status"];
+  if (typeof status === "string") {
+    const normalized = status.trim().toLowerCase();
+    if (normalized === "authenticated") {
+      return true;
+    }
+    if (normalized === "unauthenticated") {
+      return false;
+    }
+  }
+
+  return undefined;
+}
+
+function hasUnsupportedCommandText(output: string): boolean {
+  const normalized = output.toLowerCase();
+  return (
+    normalized.includes("unknown command") ||
+    normalized.includes("unrecognized command") ||
+    normalized.includes("unexpected argument")
+  );
+}
+
+function hasUnauthenticatedText(output: string): boolean {
+  const normalized = output.toLowerCase();
+  return (
+    normalized.includes("not logged in") ||
+    normalized.includes("login required") ||
+    normalized.includes("authentication required") ||
+    normalized.includes("run `claude login`") ||
+    normalized.includes("run `claude auth login`") ||
+    normalized.includes("run claude login") ||
+    normalized.includes("run claude auth login")
+  );
+}
+
+function detailFromCommandResult(result: ClaudeCommandResult): string | undefined {
+  const detail = `${result.stderr}\n${result.stdout}\n${result.errorMessage ?? ""}`.trim();
+  return detail ? sanitizeDisplaySnippet(detail, 160) : undefined;
+}
+
+function parseVersion(output: string): string | null {
+  const match = output.match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/);
+  return match ? match[0] : null;
+}
+
+function isCommandMissing(result: ClaudeCommandResult): boolean {
+  if (result.spawnErrorCode === "ENOENT") {
+    return true;
+  }
+
+  const output = `${result.stderr}\n${result.stdout}\n${result.errorMessage ?? ""}`.toLowerCase();
+  return (
+    output.includes("command not found") ||
+    output.includes("not recognized as an internal or external command") ||
+    output.includes("no such file or directory")
+  );
+}
+
+function isTimedOutError(error: Error & { code?: number | string; killed?: boolean }): boolean {
+  return (
+    error.code === "ETIMEDOUT" ||
+    error.killed === true ||
+    error.message.toLowerCase().includes("timed out")
+  );
+}
+
+async function runClaudeCommand(invocation: ClaudeCommandInvocation): Promise<ClaudeCommandResult> {
+  return await new Promise<ClaudeCommandResult>((resolve, reject) => {
+    try {
+      execFile(
+        invocation.file,
+        invocation.args,
+        {
+          encoding: "utf8",
+          timeout: CLAUDE_COMMAND_TIMEOUT_MS,
+          maxBuffer: 1024 * 1024,
+        },
+        (error: Error | null, stdout: string | Buffer, stderr: string | Buffer) => {
+          const stdoutText = typeof stdout === "string" ? stdout : stdout.toString("utf8");
+          const stderrText = typeof stderr === "string" ? stderr : stderr.toString("utf8");
+
+          if (!error) {
+            resolve({
+              code: 0,
+              stdout: stdoutText,
+              stderr: stderrText,
+              timedOut: false,
+            });
+            return;
+          }
+
+          const execError = error as Error & { code?: number | string; killed?: boolean };
+          resolve({
+            code: typeof execError.code === "number" ? execError.code : null,
+            stdout: stdoutText,
+            stderr: stderrText,
+            timedOut: isTimedOutError(execError),
+            spawnErrorCode: execError.code,
+            errorMessage: execError.message,
+          });
+        },
+      );
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function parseClaudeAuthStatusResult(result: ClaudeCommandResult): ParsedAuthProbe {
+  const combinedOutput = `${result.stdout}\n${result.stderr}`;
+
+  if (hasUnsupportedCommandText(combinedOutput)) {
+    return {
+      authStatus: "unknown",
+      unsupportedCommand: true,
+      message:
+        "Claude CLI authentication status JSON is unavailable in this version of Claude.",
+    };
+  }
+
+  if (hasUnauthenticatedText(combinedOutput)) {
+    return {
+      authStatus: "unauthenticated",
+      message: "Claude is not authenticated. Run `claude auth login` and try again.",
+    };
+  }
+
+  const trimmed = result.stdout.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const payload = JSON.parse(trimmed) as unknown;
+      const auth = extractAuthBoolean(payload);
+
+      if (auth === true) {
+        return {
+          authStatus: "authenticated",
+          jsonPayload: payload,
+        };
+      }
+
+      if (auth === false) {
+        return {
+          authStatus: "unauthenticated",
+          message: "Claude is not authenticated. Run `claude auth login` and try again.",
+          jsonPayload: payload,
+        };
+      }
+
+      return {
+        authStatus: "unknown",
+        message: "Could not verify Claude authentication status from JSON output.",
+        jsonPayload: payload,
+      };
+    } catch {
+      // Fall through to exit-code-based handling.
+    }
+  }
+
+  if (result.code === 0) {
+    return { authStatus: "authenticated" };
+  }
+
+  if (result.timedOut) {
+    return {
+      authStatus: "unknown",
+      message: "Timed out while running Claude CLI auth status.",
+    };
+  }
+
+  const detail = detailFromCommandResult(result);
+  return {
+    authStatus: "unknown",
+    message: detail
+      ? `Could not verify Claude authentication status. ${detail}`
+      : "Could not verify Claude authentication status.",
+  };
+}
+
+async function probeAnthropicDiagnostics(
+  options: AnthropicProbeOptions = {},
+): Promise<AnthropicDiagnostics> {
+  const binaryPath = resolveAnthropicBinaryPath(options.binaryPath);
+  const checkedCommands: string[] = [];
+
+  const versionCommand = buildClaudeCommandInvocation(binaryPath, ["--version"]);
+  checkedCommands.push(versionCommand.display);
+  const versionResult = await runClaudeCommand(versionCommand);
+  if (isCommandMissing(versionResult)) {
+    return {
+      installed: false,
+      version: null,
+      authStatus: "unknown",
+      quotaSupported: false,
+      quotaSource: "none",
+      checkedCommands,
+      message: `Claude CLI (\`${sanitizeDisplayText(binaryPath)}\`) is not installed or not on PATH.`,
+    };
+  }
+
+  const version = parseVersion(`${versionResult.stdout}\n${versionResult.stderr}`);
+
+  const authStatusJsonCommand = buildClaudeCommandInvocation(binaryPath, [
+    "auth",
+    "status",
+    "--json",
+  ]);
+  checkedCommands.push(authStatusJsonCommand.display);
+  const authJsonResult = await runClaudeCommand(authStatusJsonCommand);
+  let parsedAuth = parseClaudeAuthStatusResult(authJsonResult);
+
+  if (parsedAuth.unsupportedCommand) {
+    const authStatusCommand = buildClaudeCommandInvocation(binaryPath, ["auth", "status"]);
+    checkedCommands.push(authStatusCommand.display);
+    parsedAuth = parseClaudeAuthStatusResult(await runClaudeCommand(authStatusCommand));
+  }
+
+  if (parsedAuth.authStatus !== "authenticated") {
+    return {
+      installed: true,
+      version,
+      authStatus: parsedAuth.authStatus,
+      quotaSupported: false,
+      quotaSource: "none",
+      checkedCommands,
+      message: parsedAuth.message,
+    };
+  }
+
+  const quota = parsedAuth.jsonPayload ? parseUsageResponse(parsedAuth.jsonPayload) : null;
+  if (quota) {
+    return {
+      installed: true,
+      version,
+      authStatus: "authenticated",
+      quotaSupported: true,
+      quotaSource: "claude-auth-status-json",
+      checkedCommands,
+      quota,
+    };
+  }
+
+  return {
+    installed: true,
+    version,
+    authStatus: "authenticated",
+    quotaSupported: false,
+    quotaSource: "none",
+    checkedCommands,
+    message: "Claude CLI auth detected, but local quota windows were not exposed.",
+  };
+}
+
+export function clearAnthropicDiagnosticsCacheForTests(): void {
+  diagnosticsCache.clear();
+}
+
+export async function getAnthropicDiagnostics(
+  options: AnthropicProbeOptions = {},
+): Promise<AnthropicDiagnostics> {
+  const binaryPath = resolveAnthropicBinaryPath(options.binaryPath);
+  const now = Date.now();
+  const cached = diagnosticsCache.get(binaryPath) ?? {
+    timestamp: 0,
+    value: null,
+  };
+
+  if (
+    cached.value &&
+    cached.timestamp > 0 &&
+    now - cached.timestamp < ANTHROPIC_DIAGNOSTICS_TTL_MS
+  ) {
+    return cached.value;
+  }
+
+  if (cached.inFlight) {
+    return cached.inFlight;
+  }
+
+  const inFlight = probeAnthropicDiagnostics({ binaryPath }).then((value) => {
+    diagnosticsCache.set(binaryPath, {
+      timestamp: Date.now(),
+      value,
     });
+    return value;
+  });
+
+  diagnosticsCache.set(binaryPath, {
+    timestamp: cached.timestamp,
+    value: cached.value,
+    inFlight,
+  });
+
+  try {
+    return await inFlight;
+  } finally {
+    const latest = diagnosticsCache.get(binaryPath);
+    if (latest?.inFlight === inFlight) {
+      diagnosticsCache.set(binaryPath, {
+        timestamp: latest.timestamp,
+        value: latest.value,
+      });
+    }
+  }
+}
+
+export async function hasAnthropicCredentialsConfigured(
+  options: AnthropicProbeOptions = {},
+): Promise<boolean> {
+  try {
+    const diagnostics = await getAnthropicDiagnostics(options);
+    return diagnostics.installed && diagnostics.authStatus === "authenticated";
+  } catch {
+    return false;
+  }
+}
+
+export async function queryAnthropicQuota(
+  options: AnthropicProbeOptions = {},
+): Promise<AnthropicResult> {
+  try {
+    const diagnostics = await getAnthropicDiagnostics(options);
+    return diagnostics.quotaSupported ? diagnostics.quota ?? null : null;
   } catch (err) {
     return {
       success: false,
-      error: `Quota fetch failed: ${sanitizeDisplayText(
+      error: `Claude CLI probe failed: ${sanitizeDisplayText(
         err instanceof Error ? err.message : String(err),
       )}`,
     };
   }
-
-  if (response.status === 401 || response.status === 403) {
-    return {
-      success: false,
-      error: "Invalid or expired token; refresh ~/.claude/.credentials.json or CLAUDE_CODE_OAUTH_TOKEN",
-    };
-  }
-
-  if (!response.ok) {
-    let text = "";
-    try {
-      text = await response.text();
-    } catch {
-      text = "";
-    }
-    const detail = sanitizeDisplaySnippet(text, 120);
-    return {
-      success: false,
-      error: detail
-        ? `Anthropic API error ${response.status}: ${detail}`
-        : `Anthropic API returned ${response.status}`,
-    };
-  }
-
-  let data: unknown;
-  try {
-    data = await response.json();
-  } catch {
-    return {
-      success: false,
-      error: "Failed to parse Anthropic quota response",
-    };
-  }
-
-  const result = parseUsageResponse(data);
-  if (!result) {
-    return {
-      success: false,
-      error: "Unexpected Anthropic quota response shape",
-    };
-  }
-
-  return result;
 }
 
-export { CREDENTIALS_PATH, parseUsageResponse, readCredentialsFile };
+export { parseUsageResponse };

@@ -13,7 +13,7 @@ vi.mock("../src/lib/anthropic.js", () => ({
 }));
 
 describe("anthropic provider", () => {
-  it("returns attempted:false when no credentials found", async () => {
+  it("returns attempted:false when Anthropic quota is unavailable locally", async () => {
     const { queryAnthropicQuota } = await import("../src/lib/anthropic.js");
     (queryAnthropicQuota as any).mockResolvedValueOnce(null);
 
@@ -105,7 +105,8 @@ describe("anthropic provider", () => {
     const { queryAnthropicQuota } = await import("../src/lib/anthropic.js");
     (queryAnthropicQuota as any).mockResolvedValueOnce({
       success: false,
-      error: "Invalid or expired token; refresh ~/.claude/.credentials.json or CLAUDE_CODE_OAUTH_TOKEN",
+      error:
+        "Invalid or expired Anthropic token; re-authenticate Claude Code or update CLAUDE_CODE_OAUTH_TOKEN",
     });
 
     const out = await anthropicProvider.fetch({} as any);
@@ -120,7 +121,7 @@ describe("anthropic provider", () => {
     expect(anthropicProvider.matchesCurrentModel?.("copilot/claude-sonnet-4-5")).toBe(false);
   });
 
-  it("is available only when provider ids include anthropic and credentials are configured", async () => {
+  it("is available only when provider ids include anthropic and Claude CLI auth is ready", async () => {
     const { hasAnthropicCredentialsConfigured } = await import("../src/lib/anthropic.js");
     (hasAnthropicCredentialsConfigured as any).mockResolvedValue(true);
 
@@ -142,7 +143,38 @@ describe("anthropic provider", () => {
     );
   });
 
-  it("is not available when credentials are missing even if provider id exists", async () => {
+  it("passes the configured Claude binary path through Anthropic probes", async () => {
+    const { hasAnthropicCredentialsConfigured, queryAnthropicQuota } = await import(
+      "../src/lib/anthropic.js"
+    );
+    (hasAnthropicCredentialsConfigured as any).mockResolvedValue(true);
+    (queryAnthropicQuota as any).mockResolvedValueOnce(null);
+
+    const ctx = {
+      client: {
+        config: {
+          providers: vi.fn().mockResolvedValue({ data: { providers: [{ id: "anthropic" }] } }),
+          get: vi.fn(),
+        },
+      },
+      config: {
+        googleModels: [],
+        anthropicBinaryPath: "/opt/claude/bin/claude",
+      },
+    } as any;
+
+    await expect(anthropicProvider.isAvailable(ctx)).resolves.toBe(true);
+    expect(hasAnthropicCredentialsConfigured).toHaveBeenCalledWith({
+      binaryPath: "/opt/claude/bin/claude",
+    });
+
+    await anthropicProvider.fetch(ctx);
+    expect(queryAnthropicQuota).toHaveBeenCalledWith({
+      binaryPath: "/opt/claude/bin/claude",
+    });
+  });
+
+  it("is not available when Claude CLI auth is missing even if provider id exists", async () => {
     const { hasAnthropicCredentialsConfigured } = await import("../src/lib/anthropic.js");
     (hasAnthropicCredentialsConfigured as any).mockResolvedValue(false);
 

@@ -64,6 +64,7 @@ import {
 import { handled } from "./lib/command-handled.js";
 import { renderCommandHeading } from "./lib/format-utils.js";
 import { sanitizeDisplayText } from "./lib/display-sanitize.js";
+import { getAnthropicNoDataMessage } from "./providers/anthropic.js";
 
 // =============================================================================
 // Types
@@ -393,6 +394,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       `showSessionTokens=${config.showSessionTokens ? "yes" : "no"}`,
       `onlyCurrentModel=${config.onlyCurrentModel ? "yes" : "no"}`,
       `enabledProviders=${enabledProviders}`,
+      `anthropicBinaryPath=${config.anthropicBinaryPath}`,
       `googleModels=${googleModels}`,
       `alibabaTier=${config.alibabaCodingPlanTier}`,
       `cursorPlan=${config.cursorPlan}`,
@@ -464,7 +466,8 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     const onlyCurrentModel = ctx.config.onlyCurrentModel ? "yes" : "no";
     const currentModel = ctx.config.currentModel ?? "";
     const currentProviderID = ctx.config.currentProviderID ?? "";
-    return `${providerId}|style=${style}|googleModels=${googleModels}|alibabaTier=${alibabaCodingPlanTier}|cursorPlan=${cursorPlan}|cursorIncludedApiUsd=${cursorIncludedApiUsd}|cursorBillingCycleStartDay=${cursorBillingCycleStartDay}|onlyCurrentModel=${onlyCurrentModel}|currentModel=${currentModel}|currentProviderID=${currentProviderID}`;
+    const anthropicBinaryPath = ctx.config.anthropicBinaryPath ?? "";
+    return `${providerId}|style=${style}|anthropicBinaryPath=${anthropicBinaryPath}|googleModels=${googleModels}|alibabaTier=${alibabaCodingPlanTier}|cursorPlan=${cursorPlan}|cursorIncludedApiUsd=${cursorIncludedApiUsd}|cursorBillingCycleStartDay=${cursorBillingCycleStartDay}|onlyCurrentModel=${onlyCurrentModel}|currentModel=${currentModel}|currentProviderID=${currentProviderID}`;
   }
 
   async function fetchProviderWithCache(params: {
@@ -559,7 +562,28 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     if (provider.id === "cursor") {
       return "No local usage yet";
     }
+    if (provider.id === "anthropic") {
+      return getAnthropicNoDataMessage();
+    }
     return "Not configured";
+  }
+
+  function shouldSurfaceNoDataMessage(params: {
+    provider: QuotaProvider;
+    result: QuotaProviderResult;
+    isAutoMode: boolean;
+    activeProviderCount: number;
+  }): boolean {
+    const { provider, result, isAutoMode, activeProviderCount } = params;
+    if (result.attempted || result.entries.length > 0 || result.errors.length > 0) {
+      return false;
+    }
+
+    if (!isAutoMode) {
+      return true;
+    }
+
+    return activeProviderCount === 1 && (provider.id === "anthropic" || provider.id === "cursor");
   }
 
   function isProviderEnabled(providerId: string): boolean {
@@ -825,6 +849,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       client: typedClient,
       config: {
         googleModels: config.googleModels,
+        anthropicBinaryPath: config.anthropicBinaryPath,
         alibabaCodingPlanTier: config.alibabaCodingPlanTier,
         cursorPlan: config.cursorPlan,
         cursorIncludedApiUsd: config.cursorIncludedApiUsd,
@@ -959,6 +984,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       client: typedClient,
       config: {
         googleModels: config.googleModels,
+        anthropicBinaryPath: config.anthropicBinaryPath,
         alibabaCodingPlanTier: config.alibabaCodingPlanTier,
         cursorPlan: config.cursorPlan,
         cursorIncludedApiUsd: config.cursorIncludedApiUsd,
@@ -1007,22 +1033,30 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
 
     let hasExplicitProviderIssues = false;
 
-    // When enabledProviders is an explicit list, surface "Not configured" errors
-    // for providers that returned attempted:false with no entries/errors.
-    // This prevents silently omitting providers that users explicitly requested.
-    if (!isAutoMode) {
-      for (let i = 0; i < active.length; i++) {
-        const provider = active[i];
-        const result = results[i];
-        if (!result.attempted && result.entries.length === 0 && result.errors.length === 0) {
-          errors.push({
-            label: getQuotaProviderDisplayLabel(provider.id),
-            message: getExplicitNoDataMessage(provider),
-          });
+    for (let i = 0; i < active.length; i++) {
+      const provider = active[i];
+      const result = results[i];
+      if (
+        shouldSurfaceNoDataMessage({
+          provider,
+          result,
+          isAutoMode,
+          activeProviderCount: active.length,
+        })
+      ) {
+        errors.push({
+          label: getQuotaProviderDisplayLabel(provider.id),
+          message: getExplicitNoDataMessage(provider),
+        });
+        if (!isAutoMode) {
           hasExplicitProviderIssues = true;
         }
       }
+    }
 
+    // When enabledProviders is an explicit list, surface unavailable/skipped
+    // providers instead of silently omitting them.
+    if (!isAutoMode) {
       // If a user explicitly enabled providers that are unavailable (or skipped due
       // to model filtering), surface that instead of silently omitting them.
       const filteredIds = new Set(filtered.map((p) => p.id));
@@ -1202,16 +1236,21 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     const entries = results.flatMap((r) => r.entries) as any[];
     const errors = results.flatMap((r) => r.errors);
 
-    if (!isAutoMode) {
-      for (let i = 0; i < active.length; i++) {
-        const provider = active[i];
-        const result = results[i];
-        if (!result.attempted && result.entries.length === 0 && result.errors.length === 0) {
-          errors.push({
-            label: getQuotaProviderDisplayLabel(provider.id),
-            message: getExplicitNoDataMessage(provider),
-          });
-        }
+    for (let i = 0; i < active.length; i++) {
+      const provider = active[i];
+      const result = results[i];
+      if (
+        shouldSurfaceNoDataMessage({
+          provider,
+          result,
+          isAutoMode,
+          activeProviderCount: active.length,
+        })
+      ) {
+        errors.push({
+          label: getQuotaProviderDisplayLabel(provider.id),
+          message: getExplicitNoDataMessage(provider),
+        });
       }
     }
 
@@ -1290,10 +1329,11 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       providers.map(async (p) => {
         let ok = false;
         try {
-            ok = await p.isAvailable({
+          ok = await p.isAvailable({
             client: typedClient,
             config: {
               googleModels: config.googleModels,
+              anthropicBinaryPath: config.anthropicBinaryPath,
               alibabaCodingPlanTier: config.alibabaCodingPlanTier,
               cursorPlan: config.cursorPlan,
               cursorIncludedApiUsd: config.cursorIncludedApiUsd,
@@ -1326,6 +1366,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       configSource: configMeta.source,
       configPaths: configMeta.paths,
       enabledProviders: config.enabledProviders,
+      anthropicBinaryPath: config.anthropicBinaryPath,
       alibabaCodingPlanTier: config.alibabaCodingPlanTier,
       cursorPlan: config.cursorPlan,
       cursorIncludedApiUsd: config.cursorIncludedApiUsd,

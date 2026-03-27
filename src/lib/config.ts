@@ -70,6 +70,15 @@ function isValidPricingSnapshotAutoRefresh(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 /**
  * Remove duplicates from an array while preserving order
  */
@@ -130,6 +139,9 @@ export async function loadConfig(
                   .filter(Boolean),
               )
             : DEFAULT_CONFIG.enabledProviders,
+      anthropicBinaryPath:
+        normalizeOptionalString(quotaToastConfig.anthropicBinaryPath) ??
+        DEFAULT_CONFIG.anthropicBinaryPath,
       googleModels: Array.isArray(quotaToastConfig.googleModels)
         ? quotaToastConfig.googleModels.filter(isValidGoogleModelId)
         : DEFAULT_CONFIG.googleModels,

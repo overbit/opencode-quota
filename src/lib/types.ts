@@ -47,6 +47,9 @@ export interface QuotaToastConfig {
    */
   enabledProviders: string[] | "auto";
 
+  /** Path or command name for the local Claude CLI used by Anthropic probing. */
+  anthropicBinaryPath: string;
+
   googleModels: GoogleModelId[];
   alibabaCodingPlanTier: AlibabaCodingPlanTier;
   cursorPlan: CursorQuotaPlan;
@@ -89,6 +92,8 @@ export const DEFAULT_CONFIG: QuotaToastConfig = {
 
   // Providers are auto-detected by default; set to explicit list to opt-in manually.
   enabledProviders: "auto" as const,
+
+  anthropicBinaryPath: "claude",
 
   // If Google Antigravity is enabled, default to Claude only.
   googleModels: ["CLAUDE"],

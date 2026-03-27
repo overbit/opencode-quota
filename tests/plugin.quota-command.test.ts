@@ -248,6 +248,82 @@ describe("/quota command behavior", () => {
     expect(injected).not.toContain("Cursor: Not configured");
   });
 
+  it("reports explicit Anthropic providers with local auth but no exposed quota windows", async () => {
+    mocks.loadConfig.mockResolvedValueOnce({
+      ...DEFAULT_CONFIG,
+      enabled: true,
+      enabledProviders: ["anthropic"],
+      showOnQuestion: false,
+      showSessionTokens: false,
+      minIntervalMs: 60_000,
+    });
+
+    const provider = {
+      id: "anthropic",
+      isAvailable: vi.fn().mockResolvedValue(true),
+      fetch: vi.fn().mockResolvedValue({
+        attempted: false,
+        entries: [],
+        errors: [],
+      }),
+    };
+    mocks.getProviders.mockReturnValue([provider]);
+
+    const { QuotaToastPlugin } = await import("../src/plugin.js");
+    const client = createClient("anthropic/claude-sonnet-4-5", "anthropic");
+    const hooks = await QuotaToastPlugin({ client } as any);
+
+    await expect(
+      hooks["command.execute.before"]?.({
+        command: "quota",
+        sessionID: "session-anthropic-empty",
+      } as any),
+    ).rejects.toThrow(COMMAND_HANDLED_SENTINEL);
+
+    expect(client.session.prompt).toHaveBeenCalledTimes(1);
+    const injected = client.session.prompt.mock.calls[0]?.[0]?.body?.parts?.[0]?.text ?? "";
+    expect(injected).toContain("Anthropic: Quota unavailable via local Claude CLI");
+    expect(injected).not.toContain("Anthropic: Not configured");
+  });
+
+  it("reports Anthropic no-data guidance in auto mode when it is the only active provider", async () => {
+    mocks.loadConfig.mockResolvedValueOnce({
+      ...DEFAULT_CONFIG,
+      enabled: true,
+      enabledProviders: "auto",
+      showOnQuestion: false,
+      showSessionTokens: false,
+      minIntervalMs: 60_000,
+    });
+
+    const provider = {
+      id: "anthropic",
+      isAvailable: vi.fn().mockResolvedValue(true),
+      fetch: vi.fn().mockResolvedValue({
+        attempted: false,
+        entries: [],
+        errors: [],
+      }),
+    };
+    mocks.getProviders.mockReturnValue([provider]);
+
+    const { QuotaToastPlugin } = await import("../src/plugin.js");
+    const client = createClient("anthropic/claude-sonnet-4-5", "anthropic");
+    const hooks = await QuotaToastPlugin({ client } as any);
+
+    await expect(
+      hooks["command.execute.before"]?.({
+        command: "quota",
+        sessionID: "session-anthropic-auto-empty",
+      } as any),
+    ).rejects.toThrow(COMMAND_HANDLED_SENTINEL);
+
+    expect(client.session.prompt).toHaveBeenCalledTimes(1);
+    const injected = client.session.prompt.mock.calls[0]?.[0]?.body?.parts?.[0]?.text ?? "";
+    expect(injected).toContain("Anthropic: Quota unavailable via local Claude CLI");
+    expect(injected).not.toContain("Providers detected");
+  });
+
   it("does not diagnose filtered providers as detected-but-empty when onlyCurrentModel excludes them", async () => {
     mocks.loadConfig.mockResolvedValueOnce({
       ...DEFAULT_CONFIG,

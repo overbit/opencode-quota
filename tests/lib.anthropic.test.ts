@@ -1,119 +1,62 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { execFile } from "child_process";
+
 import {
+  buildClaudeCommandInvocation,
+  clearAnthropicDiagnosticsCacheForTests,
+  getAnthropicDiagnostics,
+  hasAnthropicCredentialsConfigured,
   parseUsageResponse,
   queryAnthropicQuota,
-  resolveAnthropicCredentials,
-  resolveAnthropicCredentialsFromFile,
 } from "../src/lib/anthropic.js";
 
-vi.mock("fs", async (importOriginal) => {
-  const actual = (await importOriginal()) as typeof import("fs");
-  return {
-    ...actual,
-    existsSync: vi.fn(),
-    readFileSync: vi.fn(),
-  };
-});
-
-vi.mock("os", () => ({
-  homedir: vi.fn(() => "/home/test"),
+vi.mock("child_process", () => ({
+  execFile: vi.fn(),
 }));
 
-const MOCK_TOKEN = "sk-ant-oauth-test-token";
-const MOCK_EXPIRES_FUTURE = Date.now() + 60 * 60 * 1000;
-
-const MOCK_USAGE_RESPONSE = {
-  five_hour: { used_percentage: 57, resets_at: "2026-03-25T18:00:00.000Z" },
-  seven_day: { used_percentage: 12, resets_at: "2026-04-01T00:00:00.000Z" },
+type ExecSequenceStep = {
+  stdout?: string;
+  stderr?: string;
+  code?: number | string;
+  errorMessage?: string;
+  killed?: boolean;
 };
 
+const execFileMock = vi.mocked(execFile);
+
+function mockExecSequence(steps: ExecSequenceStep[]): void {
+  execFileMock.mockImplementation((_file, _args, _options, callback) => {
+    const step = steps.shift();
+    if (!step) {
+      throw new Error("Unexpected execFile call");
+    }
+
+    const error =
+      step.code === undefined
+        ? null
+        : Object.assign(new Error(step.errorMessage ?? `Command failed: ${String(step.code)}`), {
+            code: step.code,
+            killed: step.killed ?? false,
+          });
+
+    callback(error, step.stdout ?? "", step.stderr ?? "");
+    return {} as never;
+  });
+}
+
 afterEach(() => {
-  vi.resetAllMocks();
-  vi.unstubAllGlobals();
-  delete process.env["CLAUDE_CODE_OAUTH_TOKEN"];
-});
-
-describe("resolveAnthropicCredentialsFromFile", () => {
-  it("prefers ~/.claude/.credentials.json over env", () => {
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = "env-token-value";
-
-    const result = resolveAnthropicCredentialsFromFile({
-      claudeAiOauth: {
-        accessToken: MOCK_TOKEN,
-        expiresAt: MOCK_EXPIRES_FUTURE,
-      },
-    });
-
-    expect(result).toEqual({
-      accessToken: MOCK_TOKEN,
-      expiresAt: MOCK_EXPIRES_FUTURE,
-      source: "file",
-    });
-  });
-
-  it("falls back to env when the file has no access token", () => {
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = "env-token-value";
-
-    const result = resolveAnthropicCredentialsFromFile({
-      claudeAiOauth: {},
-    });
-
-    expect(result).toEqual({
-      accessToken: "env-token-value",
-      source: "env",
-    });
-  });
-
-  it("returns null when neither file nor env contain credentials", () => {
-    expect(resolveAnthropicCredentialsFromFile(null)).toBeNull();
-    expect(resolveAnthropicCredentialsFromFile({ claudeAiOauth: {} })).toBeNull();
-  });
-});
-
-describe("resolveAnthropicCredentials", () => {
-  it("reads ~/.claude/.credentials.json when present", async () => {
-    const { existsSync, readFileSync } = await import("fs");
-    (existsSync as any).mockReturnValue(true);
-    (readFileSync as any).mockReturnValue(
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: MOCK_TOKEN,
-          expiresAt: MOCK_EXPIRES_FUTURE,
-        },
-      }),
-    );
-
-    await expect(resolveAnthropicCredentials()).resolves.toEqual({
-      accessToken: MOCK_TOKEN,
-      expiresAt: MOCK_EXPIRES_FUTURE,
-      source: "file",
-    });
-  });
-
-  it("falls back to env when the credentials file is absent", async () => {
-    const { existsSync } = await import("fs");
-    (existsSync as any).mockReturnValue(false);
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = "env-token-value";
-
-    await expect(resolveAnthropicCredentials()).resolves.toEqual({
-      accessToken: "env-token-value",
-      source: "env",
-    });
-  });
-
-  it("returns null when the credentials file is invalid and env is unset", async () => {
-    const { existsSync, readFileSync } = await import("fs");
-    (existsSync as any).mockReturnValue(true);
-    (readFileSync as any).mockReturnValue("not-json{{{");
-
-    await expect(resolveAnthropicCredentials()).resolves.toBeNull();
-  });
+  vi.clearAllMocks();
+  clearAnthropicDiagnosticsCacheForTests();
 });
 
 describe("parseUsageResponse", () => {
-  it("parses a valid response", () => {
-    const result = parseUsageResponse(MOCK_USAGE_RESPONSE);
+  it("parses the current five_hour / seven_day response shape", () => {
+    const result = parseUsageResponse({
+      five_hour: { utilization: 57, resets_at: "2026-03-25T18:00:00.000Z" },
+      seven_day: { utilization: 12, resets_at: "2026-04-01T00:00:00.000Z" },
+    });
+
     expect(result).not.toBeNull();
     expect(result?.five_hour.percentRemaining).toBe(43);
     expect(result?.five_hour.resetTimeIso).toBe("2026-03-25T18:00:00.000Z");
@@ -121,177 +64,266 @@ describe("parseUsageResponse", () => {
     expect(result?.seven_day.resetTimeIso).toBe("2026-04-01T00:00:00.000Z");
   });
 
-  it("drops invalid reset timestamps instead of surfacing raw text", () => {
+  it("parses nested quota roots and extra alias fields", () => {
     const result = parseUsageResponse({
-      five_hour: { used_percentage: 10, resets_at: "\u001b[31mbad-reset" },
-      seven_day: { used_percentage: 20, resets_at: "not-a-date" },
+      quota: {
+        fiveHour: { usedPercent: "35", resetAt: "2026-03-25T18:00:00.000Z" },
+        sevenDay: { percent_used: 15, resetsAt: "2026-04-01T00:00:00.000Z" },
+      },
     });
 
+    expect(result?.five_hour.percentRemaining).toBe(65);
+    expect(result?.five_hour.resetTimeIso).toBe("2026-03-25T18:00:00.000Z");
+    expect(result?.seven_day.percentRemaining).toBe(85);
+    expect(result?.seven_day.resetTimeIso).toBe("2026-04-01T00:00:00.000Z");
+  });
+
+  it("drops invalid reset timestamps and clamps percent remaining", () => {
+    const result = parseUsageResponse({
+      usage: {
+        five_hour: { used_percentage: 120, resets_at: "\u001b[31mbad-reset" },
+        seven_day: { used_percent: -10, reset_at: "not-a-date" },
+      },
+    });
+
+    expect(result?.five_hour.percentRemaining).toBe(0);
     expect(result?.five_hour.resetTimeIso).toBeUndefined();
+    expect(result?.seven_day.percentRemaining).toBe(100);
     expect(result?.seven_day.resetTimeIso).toBeUndefined();
   });
 
-  it("clamps percentRemaining to [0, 100]", () => {
-    const result = parseUsageResponse({
-      five_hour: { used_percentage: 120, resets_at: "" },
-      seven_day: { used_percentage: -10, resets_at: "" },
-    });
-    expect(result?.five_hour.percentRemaining).toBe(0);
-    expect(result?.seven_day.percentRemaining).toBe(100);
-  });
-
-  it("returns null when required windows are missing", () => {
-    expect(parseUsageResponse({ seven_day: { used_percentage: 10, resets_at: "" } })).toBeNull();
-    expect(parseUsageResponse({ five_hour: { used_percentage: 10, resets_at: "" } })).toBeNull();
-  });
-
-  it("returns null for non-object input or invalid percentages", () => {
+  it("returns null when required quota windows are missing or invalid", () => {
     expect(parseUsageResponse(null)).toBeNull();
-    expect(parseUsageResponse("string")).toBeNull();
-    expect(parseUsageResponse(42)).toBeNull();
+    expect(parseUsageResponse("bad-shape")).toBeNull();
     expect(
       parseUsageResponse({
-        five_hour: { used_percentage: "not-a-number", resets_at: "" },
-        seven_day: { used_percentage: 10, resets_at: "" },
+        rate_limits: {
+          five_hour: { used_percentage: "nope" },
+          seven_day: { utilization: 12 },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      parseUsageResponse({
+        rateLimits: {
+          fiveHour: { used_percentage: 30 },
+        },
       }),
     ).toBeNull();
   });
 });
 
-describe("queryAnthropicQuota", () => {
-  it("returns null when no credentials are found", async () => {
-    const { existsSync } = await import("fs");
-    (existsSync as any).mockReturnValue(false);
+describe("Claude CLI diagnostics", () => {
+  it("builds a Windows-safe Claude CLI invocation for shim-based installs", () => {
+    const invocation = buildClaudeCommandInvocation(
+      "C:\\Users\\alice\\AppData\\Roaming\\npm\\claude.cmd",
+      ["auth", "status", "--json"],
+      { platform: "win32", comspec: "C:\\Windows\\System32\\cmd.exe" },
+    );
 
+    expect(invocation).toEqual({
+      file: "C:\\Windows\\System32\\cmd.exe",
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        "\"C:\\Users\\alice\\AppData\\Roaming\\npm\\claude.cmd\" \"auth\" \"status\" \"--json\"",
+      ],
+      display: "C:\\Users\\alice\\AppData\\Roaming\\npm\\claude.cmd auth status --json",
+    });
+  });
+
+  it("reports missing Claude CLI as unavailable without quota data", async () => {
+    mockExecSequence([
+      {
+        code: "ENOENT",
+        errorMessage: "spawn claude ENOENT",
+      },
+    ]);
+
+    const diagnostics = await getAnthropicDiagnostics();
+
+    expect(diagnostics).toEqual({
+      installed: false,
+      version: null,
+      authStatus: "unknown",
+      quotaSupported: false,
+      quotaSource: "none",
+      checkedCommands: ["claude --version"],
+      message: "Claude CLI (`claude`) is not installed or not on PATH.",
+    });
+    await expect(hasAnthropicCredentialsConfigured()).resolves.toBe(false);
     await expect(queryAnthropicQuota()).resolves.toBeNull();
   });
 
-  it("returns an error when file credentials are expired", async () => {
-    const { existsSync, readFileSync } = await import("fs");
-    (existsSync as any).mockReturnValue(true);
-    (readFileSync as any).mockReturnValue(
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: MOCK_TOKEN,
-          expiresAt: Date.now() - 1_000,
-        },
-      }),
-    );
+  it("uses a configured Claude binary path for probe commands", async () => {
+    mockExecSequence([
+      {
+        code: "ENOENT",
+        errorMessage: "spawn /Applications/Claude Code.app/Contents/MacOS/claude ENOENT",
+      },
+    ]);
 
-    const out = await queryAnthropicQuota();
-    expect(out?.success).toBe(false);
-    if (out && !out.success) {
-      expect(out.error).toContain("expired");
-      expect(out.error).toContain(".claude/.credentials.json");
+    const diagnostics = await getAnthropicDiagnostics({
+      binaryPath: " /Applications/Claude Code.app/Contents/MacOS/claude ",
+    });
+
+    expect(diagnostics.checkedCommands).toEqual([
+      "\"/Applications/Claude Code.app/Contents/MacOS/claude\" --version",
+    ]);
+    expect(diagnostics.message).toContain("/Applications/Claude Code.app/Contents/MacOS/claude");
+  });
+
+  it("reports unauthenticated Claude CLI status", async () => {
+    mockExecSequence([
+      { stdout: "claude 1.2.3\n" },
+      {
+        code: 1,
+        stderr: "Not logged in. Run `claude auth login` to continue.",
+      },
+    ]);
+
+    const diagnostics = await getAnthropicDiagnostics();
+
+    expect(diagnostics.installed).toBe(true);
+    expect(diagnostics.version).toBe("1.2.3");
+    expect(diagnostics.authStatus).toBe("unauthenticated");
+    expect(diagnostics.quotaSupported).toBe(false);
+    expect(diagnostics.message).toContain("claude auth login");
+    await expect(hasAnthropicCredentialsConfigured()).resolves.toBe(false);
+    await expect(queryAnthropicQuota()).resolves.toBeNull();
+  });
+
+  it("returns quota data when Claude auth status JSON includes quota windows", async () => {
+    mockExecSequence([
+      { stdout: "claude 1.2.3\n" },
+      {
+        stdout: JSON.stringify({
+          authenticated: true,
+          quota: {
+            five_hour: {
+              used_percentage: 57,
+              resets_at: "2026-03-25T18:00:00.000Z",
+            },
+            seven_day: {
+              usedPercentage: 12,
+              resetsAt: "2026-04-01T00:00:00.000Z",
+            },
+          },
+        }),
+      },
+    ]);
+
+    const diagnostics = await getAnthropicDiagnostics();
+    expect(diagnostics.installed).toBe(true);
+    expect(diagnostics.authStatus).toBe("authenticated");
+    expect(diagnostics.quotaSupported).toBe(true);
+    expect(diagnostics.quotaSource).toBe("claude-auth-status-json");
+    expect(diagnostics.quota?.five_hour.percentRemaining).toBe(43);
+    expect(diagnostics.quota?.seven_day.percentRemaining).toBe(88);
+
+    const quota = await queryAnthropicQuota();
+    expect(quota?.success).toBe(true);
+    if (quota?.success) {
+      expect(quota.five_hour.percentRemaining).toBe(43);
+      expect(quota.seven_day.percentRemaining).toBe(88);
     }
+    await expect(hasAnthropicCredentialsConfigured()).resolves.toBe(true);
   });
 
-  it("returns success result with parsed windows", async () => {
-    const { existsSync, readFileSync } = await import("fs");
-    (existsSync as any).mockReturnValue(true);
-    (readFileSync as any).mockReturnValue(
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: MOCK_TOKEN,
-          expiresAt: MOCK_EXPIRES_FUTURE,
-        },
-      }),
-    );
+  it("falls back to plain auth status when --json is unsupported", async () => {
+    mockExecSequence([
+      { stdout: "Claude CLI version 1.2.3\n" },
+      {
+        code: 1,
+        stderr: "unexpected argument '--json'",
+      },
+      {
+        stdout: "Authenticated",
+      },
+    ]);
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify(MOCK_USAGE_RESPONSE), { status: 200 })) as any,
-    );
+    const diagnostics = await getAnthropicDiagnostics();
 
-    const out = await queryAnthropicQuota();
-    expect(out?.success).toBe(true);
-    if (out?.success) {
-      expect(out.five_hour.percentRemaining).toBe(43);
-      expect(out.seven_day.percentRemaining).toBe(88);
-    }
+    expect(diagnostics.installed).toBe(true);
+    expect(diagnostics.authStatus).toBe("authenticated");
+    expect(diagnostics.quotaSupported).toBe(false);
+    expect(diagnostics.quotaSource).toBe("none");
+    expect(diagnostics.checkedCommands).toEqual([
+      "claude --version",
+      "claude auth status --json",
+      "claude auth status",
+    ]);
+    expect(diagnostics.message).toBe(
+      "Claude CLI auth detected, but local quota windows were not exposed.",
+    );
+    await expect(hasAnthropicCredentialsConfigured()).resolves.toBe(true);
+    await expect(queryAnthropicQuota()).resolves.toBeNull();
   });
 
-  it("returns error on 401 or 403 response", async () => {
-    const { existsSync } = await import("fs");
-    (existsSync as any).mockReturnValue(false);
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = MOCK_TOKEN;
+  it("sanitizes unexpected auth probe output", async () => {
+    mockExecSequence([
+      { stdout: "claude 1.2.3\n" },
+      {
+        code: 1,
+        stderr: "bad\u001b[31m-output",
+      },
+    ]);
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("Unauthorized", { status: 401 })) as any,
-    );
-    let out = await queryAnthropicQuota();
-    expect(out?.success).toBe(false);
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("Forbidden", { status: 403 })) as any,
-    );
-    out = await queryAnthropicQuota();
-    expect(out?.success).toBe(false);
+    const diagnostics = await getAnthropicDiagnostics();
+    expect(diagnostics.authStatus).toBe("unknown");
+    expect(diagnostics.message).toContain("bad-output");
+    expect(diagnostics.message).not.toContain("\u001b");
   });
 
-  it("returns error on non-ok response with sanitized body text", async () => {
-    const { existsSync } = await import("fs");
-    (existsSync as any).mockReturnValue(false);
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = MOCK_TOKEN;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("bad\u001b[31m-body", { status: 500 })) as any,
-    );
+  it("caches diagnostics until the test helper clears the cache", async () => {
+    mockExecSequence([
+      { stdout: "claude 1.2.3\n" },
+      {
+        stdout: JSON.stringify({
+          authenticated: true,
+          quota: {
+            five_hour: { used_percentage: 10 },
+            seven_day: { used_percentage: 20 },
+          },
+        }),
+      },
+      { stdout: "claude 1.2.3\n" },
+      {
+        stdout: JSON.stringify({
+          authenticated: true,
+          quota: {
+            five_hour: { used_percentage: 30 },
+            seven_day: { used_percentage: 40 },
+          },
+        }),
+      },
+    ]);
 
-    const out = await queryAnthropicQuota();
-    expect(out?.success).toBe(false);
-    if (out && !out.success) {
-      expect(out.error).toContain("500");
-      expect(out.error).not.toContain("\u001b");
-    }
+    const first = await getAnthropicDiagnostics();
+    const second = await getAnthropicDiagnostics();
+    expect(first.quota?.five_hour.percentRemaining).toBe(90);
+    expect(second.quota?.five_hour.percentRemaining).toBe(90);
+    expect(execFileMock).toHaveBeenCalledTimes(2);
+
+    clearAnthropicDiagnosticsCacheForTests();
+
+    const third = await getAnthropicDiagnostics();
+    expect(third.quota?.five_hour.percentRemaining).toBe(70);
+    expect(execFileMock).toHaveBeenCalledTimes(4);
   });
 
-  it("returns error when fetch throws and sanitizes the message", async () => {
-    const { existsSync } = await import("fs");
-    (existsSync as any).mockReturnValue(false);
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = MOCK_TOKEN;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Promise.reject(new Error("network \u001b[31mdown"))) as any,
-    );
+  it("returns a sanitized error result when the CLI probe throws unexpectedly", async () => {
+    execFileMock.mockImplementation(() => {
+      throw new Error("probe \u001b[31mboom");
+    });
 
-    const out = await queryAnthropicQuota();
-    expect(out?.success).toBe(false);
-    if (out && !out.success) {
-      expect(out.error).toContain("Quota fetch failed");
-      expect(out.error).toContain("network down");
-      expect(out.error).not.toContain("\u001b");
-    }
-  });
-
-  it("returns error when response JSON is unparseable", async () => {
-    const { existsSync } = await import("fs");
-    (existsSync as any).mockReturnValue(false);
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = MOCK_TOKEN;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("{{{bad json", { status: 200 })) as any,
-    );
-
-    const out = await queryAnthropicQuota();
-    expect(out?.success).toBe(false);
-  });
-
-  it("returns error when response shape is unexpected", async () => {
-    const { existsSync } = await import("fs");
-    (existsSync as any).mockReturnValue(false);
-    process.env["CLAUDE_CODE_OAUTH_TOKEN"] = MOCK_TOKEN;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ unexpected: true }), { status: 200 })) as any,
-    );
-
-    const out = await queryAnthropicQuota();
-    expect(out?.success).toBe(false);
-    if (out && !out.success) {
-      expect(out.error).toContain("Unexpected");
+    const result = await queryAnthropicQuota();
+    expect(result?.success).toBe(false);
+    if (result && !result.success) {
+      expect(result.error).toContain("Claude CLI probe failed");
+      expect(result.error).toContain("probe boom");
+      expect(result.error).not.toContain("\u001b");
     }
   });
 });

@@ -95,6 +95,7 @@ export interface QuotaProviderContext {
   };
   config: {
     googleModels: string[];
+    anthropicBinaryPath?: string;
     alibabaCodingPlanTier: "lite" | "pro";
     cursorPlan: CursorQuotaPlan;
     cursorIncludedApiUsd?: number;

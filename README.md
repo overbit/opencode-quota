@@ -78,7 +78,7 @@ That is enough for most installs. Providers are auto-detected from your existing
 
 | Provider | Auto setup | How it works |
 | --- | --- | --- |
-| **Anthropic (Claude)** | Needs [quick setup](#anthropic-quick-setup) | Claude Code credentials or env. |
+| **Anthropic (Claude)** | Needs [quick setup](#anthropic-quick-setup) | Local Claude CLI auth/status probe. |
 | **GitHub Copilot** | Usually | OpenCode auth; PAT only for managed billing. |
 | **OpenAI** | Yes | OpenCode auth. |
 | **Cursor** | Needs [quick setup](#cursor-quick-setup) | Companion auth plugin + `provider.cursor`. |
@@ -94,20 +94,18 @@ That is enough for most installs. Providers are auto-detected from your existing
 <details>
 <summary><strong>Quick setup: Anthropic (Claude)</strong></summary>
 
-Anthropic quota support uses Claude Code credentials and surfaces the 5-hour and 7-day rate-limit windows.
-
-Credential resolution order:
-
-1. `~/.claude/.credentials.json` → `claudeAiOauth.accessToken`
-2. `CLAUDE_CODE_OAUTH_TOKEN` environment variable
-
-OpenCode `auth.json` is not used for Anthropic quota resolution.
+Anthropic quota support now checks the local Claude CLI instead of passing Claude consumer OAuth tokens directly to Anthropic APIs.
 
 If Claude Code is already installed and authenticated, this usually works automatically. Otherwise:
 
-1. Run Claude Code once so it writes `~/.claude/.credentials.json`.
-2. If needed, set `CLAUDE_CODE_OAUTH_TOKEN` manually as a fallback.
-3. Confirm OpenCode is configured with the `anthropic` provider.
+1. Install Claude Code so `claude` is available on your `PATH`.
+2. Run `claude auth login`.
+3. Confirm `claude auth status` succeeds locally.
+4. Confirm OpenCode is configured with the `anthropic` provider.
+
+If Claude lives at a custom path, set `experimental.quotaToast.anthropicBinaryPath`. The default is `claude`.
+
+If you use Anthropic via API key in OpenCode, model usage still works normally. This plugin only shows Anthropic quota rows when the local Claude CLI exposes quota windows.
 
 For behavior details and troubleshooting, see [Anthropic notes](#anthropic-notes).
 
@@ -202,14 +200,18 @@ There is no `/token` command. The reporting commands are the `/tokens_*` family.
 <details>
 <summary><strong>Anthropic (Claude)</strong></summary>
 
-Quota is fetched from `GET https://api.anthropic.com/api/oauth/usage` using a Claude Code OAuth access token.
+The plugin probes the local Claude CLI with `anthropicBinaryPath --version` and `anthropicBinaryPath auth status`. By default `anthropicBinaryPath` is `claude`, so standard installs work without extra config. It does not pass Claude Free/Pro/Max OAuth tokens directly to Anthropic endpoints.
+
+If the Claude CLI exposes 5-hour and 7-day quota windows in local structured output, the plugin shows them. If the CLI only exposes auth state, Anthropic quota rows are skipped and `/quota_status` explains why.
 
 **Troubleshooting:**
 
 | Problem | Solution |
 | --- | --- |
-| "No credentials found" | Run Claude Code once so it writes `~/.claude/.credentials.json`, or set `CLAUDE_CODE_OAUTH_TOKEN` |
-| "Invalid or expired token" | Refresh `~/.claude/.credentials.json` by re-authenticating Claude Code, or update `CLAUDE_CODE_OAUTH_TOKEN` |
+| `claude` not found | Install Claude Code and make sure `claude` is on your `PATH` |
+| Claude installed at a custom path | Set `experimental.quotaToast.anthropicBinaryPath` to the Claude executable path |
+| Not authenticated | Run `claude auth login`, then confirm `claude auth status` works |
+| Authenticated but no quota rows | Your local Claude CLI version did not expose quota windows; run `/quota_status` for the exact probe result |
 | Plugin not detected | Confirm OpenCode is configured with the `anthropic` provider |
 
 </details>
@@ -418,6 +420,7 @@ Workspace-local config can still customize display/report behavior, but user/glo
 | `enableToast` | `true` | Show popup toasts |
 | `toastStyle` | `classic` | Toast layout: `classic` or `grouped` |
 | `enabledProviders` | `"auto"` | Auto-detect providers, or set an explicit provider list |
+| `anthropicBinaryPath` | `"claude"` | Command/path used for local Claude CLI probing; override this for custom installs or shim locations |
 | `minIntervalMs` | `300000` | Minimum fetch interval between provider updates |
 | `toastDurationMs` | `9000` | Toast duration in milliseconds |
 | `showOnIdle` | `true` | Show toast on idle trigger |
@@ -479,7 +482,7 @@ MIT
 
 OpenCode Quota is not built by the OpenCode team and is not affiliated with OpenCode or any provider listed above.
 
-The Anthropic provider uses the documented OAuth usage endpoint with Claude Code credentials from `~/.claude/.credentials.json` or `CLAUDE_CODE_OAUTH_TOKEN`.
+Anthropic quota detection is delegated to the local Claude CLI/runtime. OpenCode Anthropic API-key usage is unaffected, but this plugin only surfaces Anthropic quota rows when the local Claude CLI exposes them.
 
 ## Star History
 

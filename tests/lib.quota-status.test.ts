@@ -55,6 +55,18 @@ const nanoGptMocks = vi.hoisted(() => ({
   queryNanoGptQuota: vi.fn(async () => null),
 }));
 
+const anthropicMocks = vi.hoisted(() => ({
+  getAnthropicDiagnostics: vi.fn(async () => ({
+    installed: true,
+    version: "1.2.3",
+    authStatus: "authenticated",
+    quotaSupported: false,
+    quotaSource: "none",
+    checkedCommands: ["claude --version", "claude auth status --json"],
+    message: "Claude CLI auth detected, but local quota windows were not exposed.",
+  })),
+}));
+
 vi.mock("fs/promises", () => ({
   stat: fsPromiseMocks.stat,
 }));
@@ -81,6 +93,10 @@ vi.mock("../src/lib/google-token-cache.js", () => ({
 vi.mock("../src/lib/google.js", () => ({
   getAntigravityAccountsCandidatePaths: () => ["/tmp/antigravity-accounts.json"],
   readAntigravityAccounts: vi.fn(async () => []),
+}));
+
+vi.mock("../src/lib/anthropic.js", () => ({
+  getAnthropicDiagnostics: anthropicMocks.getAnthropicDiagnostics,
 }));
 
 vi.mock("../src/lib/firmware.js", () => ({
@@ -237,6 +253,7 @@ describe("buildQuotaStatusReport", () => {
       configSource: "test",
       configPaths: [],
       enabledProviders: ["copilot"],
+      anthropicBinaryPath: "/opt/claude/bin/claude",
       alibabaCodingPlanTier: "lite",
       cursorPlan: "pro",
       pricingSnapshotSource: "runtime",
@@ -272,6 +289,21 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain("- alibaba auth configured: false");
     expect(report).toContain("- alibaba coding plan fallback tier: lite");
     expect(report).toContain("- alibaba_coding_plan: (none)");
+    expect(report).toContain("anthropic:");
+    expect(report).toContain("- cli_installed: true");
+    expect(report).toContain("- cli_version: 1.2.3");
+    expect(report).toContain("- auth_status: authenticated");
+    expect(report).toContain("- quota_supported: false");
+    expect(report).toContain("- quota_source: (none)");
+    expect(report).toContain(
+      "- checked_commands: claude --version | claude auth status --json",
+    );
+    expect(report).toContain(
+      "- message: Claude CLI auth detected, but local quota windows were not exposed.",
+    );
+    expect(anthropicMocks.getAnthropicDiagnostics).toHaveBeenCalledWith({
+      binaryPath: "/opt/claude/bin/claude",
+    });
     expect(report).toContain("nanogpt:");
     expect(report).toContain("- api_key_configured: false");
     expect(report).toContain("- api_key_source: (none)");
@@ -302,6 +334,57 @@ describe("buildQuotaStatusReport", () => {
     );
     expect(report).toContain(
       "- nanogpt: pricing=no (subscription request quota + account balance (not token-priced))",
+    );
+  });
+
+  it("reports Anthropic quota window details when the local Claude CLI exposes them", async () => {
+    anthropicMocks.getAnthropicDiagnostics.mockResolvedValueOnce({
+      installed: true,
+      version: "1.2.4",
+      authStatus: "authenticated",
+      quotaSupported: true,
+      quotaSource: "claude-auth-status-json",
+      checkedCommands: ["claude --version", "claude auth status --json"],
+      quota: {
+        success: true,
+        five_hour: {
+          percentRemaining: 43,
+          resetTimeIso: "2026-03-25T18:00:00.000Z",
+        },
+        seven_day: {
+          percentRemaining: 88,
+          resetTimeIso: "2026-04-01T00:00:00.000Z",
+        },
+      },
+    });
+
+    const { buildQuotaStatusReport } = await import("../src/lib/quota-status.js");
+    const report = await buildQuotaStatusReport({
+      configSource: "test",
+      configPaths: [],
+      enabledProviders: ["anthropic"],
+      alibabaCodingPlanTier: "lite",
+      cursorPlan: "none",
+      pricingSnapshotSource: "auto",
+      onlyCurrentModel: false,
+      providerAvailability: [
+        {
+          id: "anthropic",
+          enabled: true,
+          available: true,
+        },
+      ],
+      generatedAtMs: Date.UTC(2026, 2, 12, 12, 45, 0),
+    });
+
+    expect(report).toContain("- cli_version: 1.2.4");
+    expect(report).toContain("- quota_supported: true");
+    expect(report).toContain("- quota_source: claude-auth-status-json");
+    expect(report).toContain(
+      "- five_hour_remaining: 43% reset_at=2026-03-25T18:00:00.000Z",
+    );
+    expect(report).toContain(
+      "- seven_day_remaining: 88% reset_at=2026-04-01T00:00:00.000Z",
     );
   });
 
