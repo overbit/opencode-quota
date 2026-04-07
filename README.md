@@ -84,12 +84,12 @@ That is enough for most installs. Providers are auto-detected from your existing
 | **Cursor** | Needs [quick setup](#cursor-quick-setup) | Companion auth plugin + `provider.cursor`. |
 | **Qwen Code** | Needs [quick setup](#qwen-code-quick-setup) | Companion auth plugin. |
 | **Alibaba Coding Plan** | Yes | OpenCode auth + local request estimation. |
-| **Firmware AI** | Usually | User/global OpenCode config or env. |
-| **Chutes AI** | Usually | User/global OpenCode config or env. |
-| **NanoGPT** | Usually | User/global OpenCode config, env, or auth.json. |
+| **Firmware AI** | Usually | OpenCode auth, OpenCode config, or env. |
+| **Chutes AI** | Usually | OpenCode auth, OpenCode config, or env. |
+| **NanoGPT** | Usually | OpenCode auth, OpenCode config, or env. |
 | **Google Antigravity** | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth plugin. |
 | **Z.ai** | Yes | OpenCode auth. |
-| **MiniMax Coding Plan** | Yes | Existing OpenCode provider config + auth.json `minimax-coding-plan` section. |
+| **MiniMax Coding Plan** | Yes | OpenCode auth, OpenCode config, or env. |
 
 <a id="anthropic-quick-setup"></a>
 <details>
@@ -507,8 +507,6 @@ MIT
 ## Remarks
 
 OpenCode Quota is not built by the OpenCode team and is not affiliated with OpenCode or any provider listed above.
-
-Anthropic quota detection is delegated to the local Claude CLI/runtime. OpenCode Anthropic API-key usage is unaffected, but this plugin only surfaces Anthropic quota rows when the local Claude CLI exposes them.
 
 ## Star History
 
