@@ -1,4 +1,4 @@
-import type { AggregateResult, TokenBuckets } from "./quota-stats.js";
+import type { AggregateResult, SessionTreeNode, TokenBuckets } from "./quota-stats.js";
 import { renderCommandHeading } from "./format-utils.js";
 import { renderMarkdownTable, type WidthMode } from "./markdown-table.js";
 
@@ -10,11 +10,16 @@ function fmtUsd(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+function emptyBuckets(): TokenBuckets {
+  return { input: 0, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 };
+}
+
 function totalTokens(t: TokenBuckets): number {
   return t.input + t.output + t.reasoning + t.cache_read + t.cache_write;
 }
 
 type SessionReportRow = AggregateResult["bySession"][number];
+type QuotaStatsReportKind = "standard" | "session" | "session_tree";
 
 function hasRenderableSessionUsage(row: SessionReportRow): boolean {
   return totalTokens(row.tokens) > 0 || row.costUsd > 0;
@@ -29,6 +34,13 @@ function appendSessionRow(sessionRows: string[][], row: SessionReportRow, curren
     fmtCompact(row.messageCount),
     truncateTitle(row.title),
   ]);
+}
+
+function treeRelationLabel(depth: number): string {
+  if (depth <= 0) return "current";
+  if (depth === 1) return "child";
+  if (depth === 2) return "grandchild";
+  return `descendant(${depth})`;
 }
 
 function missingFocusSessionLabel(hasRawFocus: boolean): string {
@@ -125,12 +137,25 @@ export function formatQuotaStatsReport(params: {
   focusSessionID?: string;
   /** When true, hides Window/Sessions columns and Top Sessions section (for session-only reports) */
   sessionOnly?: boolean;
+  reportKind?: QuotaStatsReportKind;
+  sessionTree?: {
+    rootSessionID: string;
+    nodes: SessionTreeNode[];
+  };
   generatedAtMs?: number;
 }): string {
   const topModels = params.topModels ?? 12;
   const topSessions = params.topSessions ?? 8;
   const r = params.result;
-  const sessionOnly = params.sessionOnly ?? false;
+  const reportKind = params.reportKind ?? (params.sessionOnly ? "session" : "standard");
+  const sessionOnly = reportKind === "session";
+  const sessionTreeMode = reportKind === "session_tree";
+  const sessionTree = params.sessionTree;
+  if (sessionTreeMode && !sessionTree) {
+    throw new Error("formatQuotaStatsReport requires sessionTree for session_tree reports");
+  }
+  const combinedTokens =
+    totalTokens(r.totals.priced) + totalTokens(r.totals.unknown) + totalTokens(r.totals.unpriced);
 
   const lines: string[] = [];
 
@@ -142,7 +167,7 @@ export function formatQuotaStatsReport(params: {
   );
   lines.push("");
 
-  // For session-only reports, show a simpler summary without Window/Sessions columns
+  // Session-scoped reports use a compact summary without the time window column.
   if (sessionOnly) {
     lines.push(
       renderMarkdownTable({
@@ -152,9 +177,23 @@ export function formatQuotaStatsReport(params: {
         rows: [
           [
             fmtCompact(r.totals.messageCount),
-            fmtCompact(
-              totalTokens(r.totals.priced) + totalTokens(r.totals.unknown) + totalTokens(r.totals.unpriced),
-            ),
+            fmtCompact(combinedTokens),
+            fmtUsd(r.totals.costUsd),
+          ],
+        ],
+      }),
+    );
+  } else if (sessionTreeMode) {
+    lines.push(
+      renderMarkdownTable({
+        headers: ["Messages", "Sessions", "Tokens", "Cost"],
+        aligns: ["right", "right", "right", "right"],
+        widthMode: TABLE_WIDTH_MODE,
+        rows: [
+          [
+            fmtCompact(r.totals.messageCount),
+            fmtCompact(sessionTree!.nodes.length),
+            fmtCompact(combinedTokens),
             fmtUsd(r.totals.costUsd),
           ],
         ],
@@ -171,9 +210,7 @@ export function formatQuotaStatsReport(params: {
             fmtWindow(r.window),
             fmtCompact(r.totals.messageCount),
             fmtCompact(r.totals.sessionCount),
-            fmtCompact(
-              totalTokens(r.totals.priced) + totalTokens(r.totals.unknown) + totalTokens(r.totals.unpriced),
-            ),
+            fmtCompact(combinedTokens),
             fmtUsd(r.totals.costUsd),
           ],
         ],
@@ -244,8 +281,37 @@ export function formatQuotaStatsReport(params: {
     lines.push(renderMarkdownTable({ headers, rows, aligns, widthMode: TABLE_WIDTH_MODE }));
   }
 
-  // Skip Top Sessions for session-only reports (e.g., /tokens_session)
-  if (!sessionOnly) {
+  if (sessionTreeMode) {
+    lines.push("");
+    lines.push(`## Session Tree`);
+    lines.push("");
+
+    const sessionUsageByID = new Map(r.bySession.map((row) => [row.sessionID, row]));
+    const sessionTreeRows = sessionTree!.nodes.map((node) => {
+      const usage = sessionUsageByID.get(node.sessionID);
+      return [
+        treeRelationLabel(node.depth),
+        node.parentID ?? "-",
+        node.sessionID,
+        fmtUsd(usage?.costUsd ?? 0),
+        fmtCompact(totalTokens(usage?.tokens ?? emptyBuckets())),
+        fmtCompact(usage?.messageCount ?? 0),
+        truncateTitle(node.title ?? usage?.title),
+      ];
+    });
+
+    lines.push(
+      renderMarkdownTable({
+        headers: ["Relation", "Parent", "Session", "Cost", "Tokens", "Msgs", "Title"],
+        aligns: ["left", "left", "left", "right", "right", "right", "left"],
+        widthMode: TABLE_WIDTH_MODE,
+        rows: sessionTreeRows,
+      }),
+    );
+  }
+
+  // Skip Top Sessions for session-scoped reports (e.g., /tokens_session, /tokens_session_all).
+  if (reportKind === "standard") {
     lines.push("");
     lines.push(`## Top Sessions`);
     lines.push("");

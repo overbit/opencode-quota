@@ -158,6 +158,79 @@ describe("formatQuotaStatsReport (markdown)", () => {
     expect(out).not.toContain("## Top Sessions");
   });
 
+  it("session_tree mode renders a session breakdown and counts zero-usage descendants", () => {
+    const r = makeEmptyResult({
+      totals: {
+        priced: { input: 100, output: 200, reasoning: 0, cache_read: 0, cache_write: 0 },
+        unknown: { input: 5, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 },
+        unpriced: { input: 0, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 },
+        costUsd: 0.5,
+        messageCount: 4,
+        sessionCount: 2,
+      },
+      bySourceModel: [
+        {
+          sourceProviderID: "opencode",
+          sourceModelID: "claude-opus-4-5-high",
+          tokens: { input: 100, output: 200, reasoning: 0, cache_read: 0, cache_write: 0 },
+          costUsd: 0.5,
+          messageCount: 3,
+        },
+      ],
+      bySession: [
+        {
+          sessionID: "ses_parent",
+          title: "Parent Session",
+          tokens: { input: 100, output: 200, reasoning: 0, cache_read: 0, cache_write: 0 },
+          costUsd: 0.5,
+          messageCount: 3,
+        },
+        {
+          sessionID: "ses_child",
+          title: "Child Session",
+          tokens: { input: 5, output: 0, reasoning: 0, cache_read: 0, cache_write: 0 },
+          costUsd: 0,
+          messageCount: 1,
+        },
+      ],
+    });
+
+    const out = formatQuotaStatsReport({
+      title: "Tokens used (Current Session Tree) (/tokens_session_all)",
+      result: r,
+      reportKind: "session_tree",
+      sessionTree: {
+        rootSessionID: "ses_parent",
+        nodes: [
+          { sessionID: "ses_parent", title: "Parent Session", depth: 0 },
+          {
+            sessionID: "ses_child",
+            parentID: "ses_parent",
+            title: "Child Session",
+            depth: 1,
+          },
+          {
+            sessionID: "ses_grandchild",
+            parentID: "ses_child",
+            title: "Grandchild Session",
+            depth: 2,
+          },
+        ],
+      },
+    });
+
+    expect(out).toContain("| Messages");
+    expect(out).toContain("| Sessions");
+    expect(out).toContain("## Session Tree");
+    expect(out).toContain("current");
+    expect(out).toContain("child");
+    expect(out).toContain("grandchild");
+    expect(out).toContain("ses_parent");
+    expect(out).toContain("ses_grandchild");
+    expect(out).toContain("$0.00");
+    expect(out).not.toContain("## Top Sessions");
+  });
+
   it("standard mode includes Window/Sessions columns and Top Sessions section", () => {
     const r = makeEmptyResult({
       totals: {

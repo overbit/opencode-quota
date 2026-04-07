@@ -190,10 +190,12 @@ For behavior details and troubleshooting, see [Qwen Code notes](#qwen-code-notes
 | `/tokens_weekly` | Tokens used in the last 7 days |
 | `/tokens_monthly` | Tokens used in the last 30 days, including pricing sections |
 | `/tokens_all` | Tokens used across all local history |
-| `/tokens_session` | Tokens used in the current session |
+| `/tokens_session` | Tokens used in the current session only |
+| `/tokens_session_all` | Tokens used in the current session plus all descendant child/subagent sessions |
 | `/tokens_between` | Tokens used between two dates: `YYYY-MM-DD YYYY-MM-DD` |
 
 There is no `/token` command. The reporting commands are the `/tokens_*` family.
+Use `/tokens_session` for strict per-session accounting, and `/tokens_session_all` when you want the selected parent session plus every nested child session linked by `parent_id`.
 
 ## Provider-Specific Notes
 

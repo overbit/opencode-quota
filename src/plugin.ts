@@ -23,7 +23,12 @@ import type {
   SessionTokensData,
 } from "./lib/entries.js";
 import { tool } from "@opencode-ai/plugin";
-import { aggregateUsage } from "./lib/quota-stats.js";
+import {
+  aggregateUsage,
+  resolveSessionTree,
+  SessionNotFoundError,
+  type SessionTreeNode,
+} from "./lib/quota-stats.js";
 import { fetchSessionTokensForDisplay } from "./lib/session-tokens.js";
 import { formatQuotaStatsReport } from "./lib/quota-stats-format.js";
 import { buildQuotaStatusReport, type SessionTokenError } from "./lib/quota-status.js";
@@ -191,6 +196,7 @@ type TokenReportCommandId =
   | "tokens_monthly"
   | "tokens_all"
   | "tokens_session"
+  | "tokens_session_all"
   | "tokens_between";
 
 /** Specification for a token report command */
@@ -201,7 +207,7 @@ type TokenReportCommandSpec =
       description: string;
       title: string;
       metadataTitle: string;
-      kind: "rolling" | "today" | "all" | "session";
+      kind: "rolling" | "today" | "all" | "session" | "session_tree";
       windowMs?: number;
       topModels?: number;
       topSessions?: number;
@@ -269,6 +275,15 @@ const TOKEN_REPORT_COMMANDS: readonly TokenReportCommandSpec[] = [
     title: "Tokens used (Current Session) (/tokens_session)",
     metadataTitle: "Tokens used (Current Session)",
     kind: "session",
+  },
+  {
+    id: "tokens_session_all",
+    template: "/tokens_session_all",
+    description:
+      "Token + deterministic cost summary for current session and all descendant child/subagent sessions.",
+    title: "Tokens used (Current Session Tree) (/tokens_session_all)",
+    metadataTitle: "Tokens used (Current Session Tree)",
+    kind: "session_tree",
   },
   {
     id: "tokens_between",
@@ -1282,14 +1297,21 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     topModels?: number;
     topSessions?: number;
     filterSessionID?: string;
+    filterSessionIDs?: string[];
     /** When true, hides Window/Sessions columns and Top Sessions section */
     sessionOnly?: boolean;
+    reportKind?: "standard" | "session" | "session_tree";
+    sessionTree?: {
+      rootSessionID: string;
+      nodes: SessionTreeNode[];
+    };
     generatedAtMs: number;
   }): Promise<string> {
     const result = await aggregateUsage({
       sinceMs: params.sinceMs,
       untilMs: params.untilMs,
       sessionID: params.filterSessionID,
+      sessionIDs: params.filterSessionIDs,
     });
     return formatQuotaStatsReport({
       title: params.title,
@@ -1298,6 +1320,8 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       topSessions: params.topSessions,
       focusSessionID: params.sessionID,
       sessionOnly: params.sessionOnly,
+      reportKind: params.reportKind,
+      sessionTree: params.sessionTree,
       generatedAtMs: params.generatedAtMs,
     });
   }
@@ -1441,6 +1465,26 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     return lines.join("\n");
   }
 
+  function buildTokenReportUnavailableOutput(params: {
+    command: `/${string}`;
+    generatedAtMs: number;
+    error: SessionNotFoundError;
+  }): string {
+    const lines = [
+      renderCommandHeading({
+        title: `Token report unavailable (${params.command})`,
+        generatedAtMs: params.generatedAtMs,
+      }),
+      "",
+      "session_lookup_error:",
+      `- session_id: ${params.error.sessionID}`,
+      `- error: ${params.error.message}`,
+      `- checked_path: ${params.error.checkedPath}`,
+    ];
+
+    return lines.join("\n");
+  }
+
   async function injectCommandOutputAndHandle(
     sessionID: string,
     output?: string | null,
@@ -1562,69 +1606,97 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     await kickPricingRefresh({ reason: "tokens", maxWaitMs: 750 });
     const spec = TOKEN_REPORT_COMMANDS_BY_ID.get(command)!;
 
-    if (spec.kind === "between") {
-      const parsed = parseQuotaBetweenArgs(input.arguments);
-      if (!parsed.ok) {
+    try {
+      if (spec.kind === "between") {
+        const parsed = parseQuotaBetweenArgs(input.arguments);
+        if (!parsed.ok) {
+          return await injectCommandOutputAndHandle(
+            sessionID,
+            `Invalid arguments for /${spec.id}\n\n${parsed.error}\n\nExpected: /${spec.id} YYYY-MM-DD YYYY-MM-DD\nExample: /${spec.id} 2026-01-01 2026-01-15`,
+          );
+        }
+
+        const sinceMs = startOfLocalDayMs(parsed.startYmd);
+        const rangeUntilMs = startOfNextLocalDayMs(parsed.endYmd);
         return await injectCommandOutputAndHandle(
           sessionID,
-          `Invalid arguments for /${spec.id}\n\n${parsed.error}\n\nExpected: /${spec.id} YYYY-MM-DD YYYY-MM-DD\nExample: /${spec.id} 2026-01-01 2026-01-15`,
+          await buildQuotaReport({
+            title: spec.titleForRange(parsed.startYmd, parsed.endYmd),
+            sinceMs,
+            untilMs: rangeUntilMs,
+            sessionID,
+            generatedAtMs,
+          }),
         );
       }
 
-      const sinceMs = startOfLocalDayMs(parsed.startYmd);
-      const rangeUntilMs = startOfNextLocalDayMs(parsed.endYmd);
+      let sinceMs: number | undefined;
+      let filterSessionID: string | undefined;
+      let filterSessionIDs: string[] | undefined;
+      let sessionOnly: boolean | undefined;
+      let topModels: number | undefined;
+      let topSessions: number | undefined;
+      let reportKind: "standard" | "session" | "session_tree" | undefined;
+      let sessionTree: { rootSessionID: string; nodes: SessionTreeNode[] } | undefined;
+
+      switch (spec.kind) {
+        case "rolling":
+          sinceMs = untilMs - spec.windowMs!;
+          break;
+        case "today": {
+          const now = new Date();
+          const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          sinceMs = startOfDay.getTime();
+          break;
+        }
+        case "session":
+          filterSessionID = sessionID;
+          sessionOnly = true;
+          reportKind = "session";
+          break;
+        case "session_tree": {
+          const nodes = await resolveSessionTree(sessionID);
+          filterSessionIDs = nodes.map((node) => node.sessionID);
+          reportKind = "session_tree";
+          sessionTree = { rootSessionID: sessionID, nodes };
+          break;
+        }
+        case "all":
+          topModels = spec.topModels;
+          topSessions = spec.topSessions;
+          break;
+      }
+
       return await injectCommandOutputAndHandle(
         sessionID,
         await buildQuotaReport({
-          title: spec.titleForRange(parsed.startYmd, parsed.endYmd),
+          title: spec.title,
           sinceMs,
-          untilMs: rangeUntilMs,
+          untilMs: spec.kind === "rolling" || spec.kind === "today" ? untilMs : undefined,
           sessionID,
+          filterSessionID,
+          filterSessionIDs,
+          sessionOnly,
+          reportKind,
+          sessionTree,
+          topModels,
+          topSessions,
           generatedAtMs,
         }),
       );
-    }
-
-    let sinceMs: number | undefined;
-    let filterSessionID: string | undefined;
-    let sessionOnly: boolean | undefined;
-    let topModels: number | undefined;
-    let topSessions: number | undefined;
-
-    switch (spec.kind) {
-      case "rolling":
-        sinceMs = untilMs - spec.windowMs!;
-        break;
-      case "today": {
-        const now = new Date();
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        sinceMs = startOfDay.getTime();
-        break;
+    } catch (err) {
+      if (err instanceof SessionNotFoundError) {
+        return await injectCommandOutputAndHandle(
+          sessionID,
+          buildTokenReportUnavailableOutput({
+            command: spec.template,
+            generatedAtMs,
+            error: err,
+          }),
+        );
       }
-      case "session":
-        filterSessionID = sessionID;
-        sessionOnly = true;
-        break;
-      case "all":
-        topModels = spec.topModels;
-        topSessions = spec.topSessions;
-        break;
+      throw err;
     }
-
-    return await injectCommandOutputAndHandle(
-      sessionID,
-      await buildQuotaReport({
-        title: spec.title,
-        sinceMs,
-        untilMs: spec.kind === "rolling" || spec.kind === "today" ? untilMs : undefined,
-        sessionID,
-        filterSessionID,
-        sessionOnly,
-        topModels,
-        topSessions,
-        generatedAtMs,
-      }),
-    );
   }
 
   async function handleQuotaStatusSlashCommand(input: CommandExecuteInput): Promise<never> {

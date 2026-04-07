@@ -110,6 +110,10 @@ function safeJsonParse(raw: string): any | null {
   }
 }
 
+// Stay comfortably below SQLite's default host-parameter cap once optional
+// time filters are included in the query.
+const SQLITE_MAX_MESSAGE_QUERY_ARGS = 900;
+
 function normalizeNumber(n: unknown): number | undefined {
   return typeof n === "number" && Number.isFinite(n) ? n : undefined;
 }
@@ -161,17 +165,51 @@ function validateSessionIdOrThrow(sessionID: string): void {
   }
 }
 
+function normalizeSessionIdsOrThrow(sessionIDs: readonly string[]): string[] {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+
+  for (const sessionID of sessionIDs) {
+    validateSessionIdOrThrow(sessionID);
+    if (seen.has(sessionID)) continue;
+    seen.add(sessionID);
+    unique.push(sessionID);
+  }
+
+  return unique;
+}
+
+function chunkArray<T>(items: readonly T[], chunkSize: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 function buildMessageQuery(params: {
   sessionID?: string;
+  sessionIDs?: string[];
   sinceMs?: number;
   untilMs?: number;
 }): { sql: string; args: unknown[] } {
+  if (params.sessionID && params.sessionIDs?.length) {
+    throw new Error("buildMessageQuery received both sessionID and sessionIDs");
+  }
+
   const where: string[] = [];
   const args: unknown[] = [];
 
   if (params.sessionID) {
     where.push(`session_id = ?`);
     args.push(params.sessionID);
+  } else if (params.sessionIDs) {
+    if (params.sessionIDs.length === 0) {
+      where.push(`1 = 0`);
+    } else {
+      where.push(`session_id IN (${params.sessionIDs.map(() => "?").join(", ")})`);
+      args.push(...params.sessionIDs);
+    }
   }
 
   if (typeof params.sinceMs === "number") {
@@ -201,6 +239,24 @@ async function hasJsonExtract(conn: { get<T = unknown>(sql: string, params?: unk
   } catch {
     return false;
   }
+}
+
+function mapAssistantMessages(rows: MessageRow[]): OpenCodeMessage[] {
+  const out: OpenCodeMessage[] = [];
+  for (const row of rows) {
+    const msg = mapRowToOpenCodeMessage(row);
+    if (!msg) continue;
+    if (String(msg.role).toLowerCase() !== "assistant") continue;
+    out.push(msg);
+  }
+  return out;
+}
+
+function compareMessageOrder(a: OpenCodeMessage, b: OpenCodeMessage): number {
+  const aCreated = typeof a.time?.created === "number" ? a.time.created : Number.MAX_SAFE_INTEGER;
+  const bCreated = typeof b.time?.created === "number" ? b.time.created : Number.MAX_SAFE_INTEGER;
+  if (aCreated !== bCreated) return aCreated - bCreated;
+  return a.id.localeCompare(b.id);
 }
 
 export async function getOpenCodeDbStats(): Promise<OpenCodeDbStats> {
@@ -255,15 +311,7 @@ export async function iterAssistantMessages(params: {
   try {
     const q = buildMessageQuery({ sinceMs: params.sinceMs, untilMs: params.untilMs });
     const rows = conn.all<MessageRow>(q.sql, q.args);
-
-    const out: OpenCodeMessage[] = [];
-    for (const row of rows) {
-      const msg = mapRowToOpenCodeMessage(row);
-      if (!msg) continue;
-      if (String(msg.role).toLowerCase() !== "assistant") continue;
-      out.push(msg);
-    }
-    return out;
+    return mapAssistantMessages(rows);
   } finally {
     conn.close();
   }
@@ -296,15 +344,47 @@ export async function iterAssistantMessagesForSession(params: {
 
     const q = buildMessageQuery({ sessionID, sinceMs, untilMs });
     const rows = conn.all<MessageRow>(q.sql, q.args);
+    return mapAssistantMessages(rows);
+  } finally {
+    conn.close();
+  }
+}
 
-    const out: OpenCodeMessage[] = [];
-    for (const row of rows) {
-      const msg = mapRowToOpenCodeMessage(row);
-      if (!msg) continue;
-      if (String(msg.role).toLowerCase() !== "assistant") continue;
-      out.push(msg);
+/**
+ * Read assistant messages for a specific set of sessions.
+ */
+export async function iterAssistantMessagesForSessions(params: {
+  sessionIDs: string[];
+  sinceMs?: number;
+  untilMs?: number;
+}): Promise<OpenCodeMessage[]> {
+  const sessionIDs = normalizeSessionIdsOrThrow(params.sessionIDs);
+  if (sessionIDs.length === 0) return [];
+
+  const db = openDbOrNull();
+  if (!db) {
+    throw new SessionNotFoundError(sessionIDs[0]!, getOpenCodeDbPath());
+  }
+
+  const conn = await db.open();
+  try {
+    const reservedArgs =
+      (typeof params.sinceMs === "number" ? 1 : 0) + (typeof params.untilMs === "number" ? 1 : 0);
+    const maxSessionIdsPerQuery = Math.max(1, SQLITE_MAX_MESSAGE_QUERY_ARGS - reservedArgs);
+    const messages: OpenCodeMessage[] = [];
+
+    for (const sessionIdChunk of chunkArray(sessionIDs, maxSessionIdsPerQuery)) {
+      const q = buildMessageQuery({
+        sessionIDs: sessionIdChunk,
+        sinceMs: params.sinceMs,
+        untilMs: params.untilMs,
+      });
+      const rows = conn.all<MessageRow>(q.sql, q.args);
+      messages.push(...mapAssistantMessages(rows));
     }
-    return out;
+
+    messages.sort(compareMessageOrder);
+    return messages;
   } finally {
     conn.close();
   }

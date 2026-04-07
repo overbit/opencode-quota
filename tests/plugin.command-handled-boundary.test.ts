@@ -133,7 +133,7 @@ describe("plugin command handled boundary", () => {
     ).rejects.toThrow("boom");
   });
 
-  it("treats handled slash commands as strict no-op when disabled", async () => {
+  it("treats handled token slash commands as strict no-op when disabled", async () => {
     mocks.loadConfig.mockResolvedValue({
       ...DEFAULT_CONFIG,
       enabled: false,
@@ -147,6 +147,12 @@ describe("plugin command handled boundary", () => {
       hooks["command.execute.before"]?.({
         command: "tokens_daily",
         sessionID: "session-disabled",
+      } as any),
+    ).rejects.toThrow(COMMAND_HANDLED_SENTINEL);
+    await expect(
+      hooks["command.execute.before"]?.({
+        command: "tokens_session_all",
+        sessionID: "session-disabled-tree",
       } as any),
     ).rejects.toThrow(COMMAND_HANDLED_SENTINEL);
 

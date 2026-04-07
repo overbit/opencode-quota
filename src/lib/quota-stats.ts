@@ -1,6 +1,8 @@
 import type { OpenCodeMessage } from "./opencode-storage.js";
 import {
+  getOpenCodeDbPath,
   iterAssistantMessages,
+  iterAssistantMessagesForSessions,
   iterAssistantMessagesForSession,
   readAllSessionsIndex,
   SessionNotFoundError,
@@ -109,6 +111,13 @@ export type UnpricedRow = {
   key: UnpricedKey;
   tokens: TokenBuckets;
   messageCount: number;
+};
+
+export type SessionTreeNode = {
+  sessionID: string;
+  parentID?: string;
+  title?: string;
+  depth: number;
 };
 
 export type AggregateResult = {
@@ -531,14 +540,92 @@ function classifyMissingPricing(params: {
   return { kind: "unknown" };
 }
 
+function compareSessionCreatedAt(
+  a: Awaited<ReturnType<typeof readAllSessionsIndex>>[string],
+  b: Awaited<ReturnType<typeof readAllSessionsIndex>>[string],
+): number {
+  const aCreated =
+    typeof a.time?.created === "number" && Number.isFinite(a.time.created)
+      ? a.time.created
+      : Number.MAX_SAFE_INTEGER;
+  const bCreated =
+    typeof b.time?.created === "number" && Number.isFinite(b.time.created)
+      ? b.time.created
+      : Number.MAX_SAFE_INTEGER;
+
+  if (aCreated !== bCreated) return aCreated - bCreated;
+  return a.id.localeCompare(b.id);
+}
+
+export async function resolveSessionTree(rootSessionID: string): Promise<SessionTreeNode[]> {
+  if (!rootSessionID.startsWith("ses_")) {
+    throw new SessionNotFoundError(rootSessionID, "(invalid session ID format)");
+  }
+
+  const sessionsIdx = await readAllSessionsIndex();
+  const root = sessionsIdx[rootSessionID];
+  if (!root) {
+    throw new SessionNotFoundError(rootSessionID, getOpenCodeDbPath());
+  }
+
+  const childrenByParentID = new Map<string, Array<(typeof sessionsIdx)[string]>>();
+  for (const session of Object.values(sessionsIdx)) {
+    if (!session.parentID) continue;
+    const children = childrenByParentID.get(session.parentID);
+    if (children) {
+      children.push(session);
+    } else {
+      childrenByParentID.set(session.parentID, [session]);
+    }
+  }
+
+  for (const children of childrenByParentID.values()) {
+    children.sort(compareSessionCreatedAt);
+  }
+
+  const tree: SessionTreeNode[] = [];
+  const visited = new Set<string>();
+
+  const visit = (session: (typeof sessionsIdx)[string], depth: number): void => {
+    if (visited.has(session.id)) return;
+    visited.add(session.id);
+
+    tree.push({
+      sessionID: session.id,
+      parentID: session.parentID,
+      title: session.title,
+      depth,
+    });
+
+    const children = childrenByParentID.get(session.id) ?? [];
+    for (const child of children) {
+      visit(child, depth + 1);
+    }
+  };
+
+  visit(root, 0);
+  return tree;
+}
+
 export async function aggregateUsage(params: {
   sinceMs?: number;
   untilMs?: number;
   sessionID?: string;
+  sessionIDs?: string[];
 }): Promise<AggregateResult> {
-  // Use session-scoped iterator when filtering by sessionID for better performance
+  if (params.sessionID && params.sessionIDs?.length) {
+    throw new Error("aggregateUsage received both sessionID and sessionIDs");
+  }
+
+  // Use session-scoped iterators when filtering by session ids for better performance.
   let messages: OpenCodeMessage[];
-  if (params.sessionID) {
+  if (params.sessionIDs) {
+    messages = await iterAssistantMessagesForSessions({
+      sessionIDs: params.sessionIDs,
+      sinceMs: params.sinceMs,
+      untilMs: params.untilMs,
+    });
+  } else if (params.sessionID) {
     messages = await iterAssistantMessagesForSession({
       sessionID: params.sessionID,
       sinceMs: params.sinceMs,
@@ -564,6 +651,22 @@ export async function aggregateUsage(params: {
 
   for (const msg of messages) {
     const tokens = messageBuckets(msg);
+    const sid = msg.sessionID;
+    const sessionTitle = sessionsIdx[sid]?.title;
+    const existingSessionRow = bySession.get(sid);
+    if (existingSessionRow) {
+      existingSessionRow.tokens = addBuckets(existingSessionRow.tokens, tokens);
+      existingSessionRow.messageCount += 1;
+    } else {
+      bySession.set(sid, {
+        sessionID: sid,
+        title: sessionTitle,
+        tokens,
+        costUsd: 0,
+        messageCount: 1,
+      });
+    }
+
     const cacheKey = `${msg.providerID ?? ""}|||${msg.modelID ?? ""}`;
     const cached = resolutionCache.get(cacheKey);
     const mapping = cached ?? mapToOfficialPricingKey({ providerID: msg.providerID, modelID: msg.modelID });
@@ -684,21 +787,9 @@ export async function aggregateUsage(params: {
       });
     }
 
-    const sid = msg.sessionID;
     const s = bySession.get(sid);
-    const title = sessionsIdx[sid]?.title;
     if (s) {
-      s.tokens = addBuckets(s.tokens, tokens);
       s.costUsd += priced.costUsd;
-      s.messageCount += 1;
-    } else {
-      bySession.set(sid, {
-        sessionID: sid,
-        title,
-        tokens,
-        costUsd: priced.costUsd,
-        messageCount: 1,
-      });
     }
   }
 
