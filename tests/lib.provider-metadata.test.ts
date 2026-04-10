@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   QUOTA_PROVIDER_ID_SYNONYMS,
+  QUOTA_PROVIDER_RUNTIME_IDS,
   QUOTA_PROVIDER_SHAPES,
   getQuotaProviderDisplayLabel,
+  getQuotaProviderRuntimeIds,
   getQuotaProviderShape,
   normalizeQuotaProviderId,
 } from "../src/lib/provider-metadata.js";
@@ -102,6 +104,29 @@ describe("provider-metadata", () => {
     for (const [alias, canonicalId] of Object.entries(QUOTA_PROVIDER_ID_SYNONYMS)) {
       expect(normalizeQuotaProviderId(alias)).toBe(canonicalId);
     }
+  });
+
+  it("defines conservative runtime ids for provider matching", () => {
+    expect(QUOTA_PROVIDER_RUNTIME_IDS.copilot).toEqual([
+      "copilot",
+      "github-copilot",
+      "copilot-chat",
+      "github-copilot-chat",
+    ]);
+    expect(QUOTA_PROVIDER_RUNTIME_IDS.anthropic).toEqual(["anthropic"]);
+    expect(QUOTA_PROVIDER_RUNTIME_IDS.cursor).toEqual(["cursor", "cursor-acp"]);
+  });
+
+  it("keeps runtime ids distinct from broad normalization aliases", () => {
+    expect(getQuotaProviderRuntimeIds("github-copilot")).toEqual([
+      "copilot",
+      "github-copilot",
+      "copilot-chat",
+      "github-copilot-chat",
+    ]);
+    expect(getQuotaProviderRuntimeIds("claude")).toEqual(["anthropic"]);
+    expect(getQuotaProviderRuntimeIds("open-cursor")).toEqual(["cursor", "cursor-acp"]);
+    expect(getQuotaProviderRuntimeIds("not-a-provider")).toEqual([]);
   });
 
   it("returns provider setup metadata for canonical ids and aliases", () => {

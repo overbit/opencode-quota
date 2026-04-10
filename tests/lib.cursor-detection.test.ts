@@ -85,4 +85,25 @@ describe("cursor detection", () => {
     expect(result.providerConfigured).toBe(true);
     expect(result.matchedPaths).toEqual(["/tmp/config/opencode.json"]);
   });
+
+  it("detects legacy cursor runtime ids in provider config without treating them as plugins", async () => {
+    mockFiles.set(
+      "/tmp/config/opencode.json",
+      JSON.stringify({
+        plugin: ["some-other-plugin"],
+        provider: {
+          "cursor-acp": {
+            name: "Cursor ACP",
+          },
+        },
+      }),
+    );
+
+    const { inspectCursorOpenCodeIntegration } = await import("../src/lib/cursor-detection.js");
+    const result = await inspectCursorOpenCodeIntegration();
+
+    expect(result.pluginEnabled).toBe(false);
+    expect(result.providerConfigured).toBe(true);
+    expect(result.matchedPaths).toEqual(["/tmp/config/opencode.json"]);
+  });
 });

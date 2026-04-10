@@ -5,7 +5,7 @@ import type {
   QuotaToastEntry,
 } from "../lib/entries.js";
 import { clampPercent, fmtUsdAmount } from "../lib/format-utils.js";
-import { isAnyProviderIdAvailable } from "../lib/provider-availability.js";
+import { isCanonicalProviderAvailable } from "../lib/provider-availability.js";
 import {
   getEffectiveCursorIncludedApiUsd,
   getCursorPlanDisplayName,
@@ -32,9 +32,9 @@ export const cursorProvider: QuotaProvider = {
   id: "cursor",
 
   async isAvailable(ctx: QuotaProviderContext): Promise<boolean> {
-    const availableViaProviderConfig = await isAnyProviderIdAvailable({
+    const availableViaProviderConfig = await isCanonicalProviderAvailable({
       ctx,
-      candidateIds: ["cursor", "cursor-acp"],
+      providerId: "cursor",
       fallbackOnError: false,
     });
     if (availableViaProviderConfig) return true;

@@ -6,9 +6,9 @@ import { join } from "path";
 import { parseJsonOrJsonc } from "./jsonc.js";
 import { getAuthPaths } from "./opencode-auth.js";
 import { getOpencodeRuntimeDirCandidates } from "./opencode-runtime-paths.js";
+import { getQuotaProviderRuntimeIds } from "./provider-metadata.js";
 import {
   CURSOR_LEGACY_PROVIDER_ID,
-  CURSOR_PROVIDER_ID,
 } from "./cursor-pricing.js";
 import type { AuthData, CursorOAuthAuthData } from "./types.js";
 
@@ -155,9 +155,8 @@ function pluginIncludesCursor(value: unknown): boolean {
 
 function providerConfigIncludesCursor(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
-  return (
-    Object.prototype.hasOwnProperty.call(value, CURSOR_PROVIDER_ID) ||
-    Object.prototype.hasOwnProperty.call(value, CURSOR_LEGACY_PROVIDER_ID)
+  return getQuotaProviderRuntimeIds("cursor").some((id) =>
+    Object.prototype.hasOwnProperty.call(value, id),
   );
 }
 

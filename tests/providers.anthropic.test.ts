@@ -137,6 +137,7 @@ describe("anthropic provider", () => {
       }) as any;
 
     await expect(anthropicProvider.isAvailable(makeCtx(["anthropic"]))).resolves.toBe(true);
+    await expect(anthropicProvider.isAvailable(makeCtx(["claude"]))).resolves.toBe(false);
     await expect(anthropicProvider.isAvailable(makeCtx(["openai"]))).resolves.toBe(false);
     await expect(anthropicProvider.isAvailable(makeCtx(["copilot", "anthropic"]))).resolves.toBe(
       true,

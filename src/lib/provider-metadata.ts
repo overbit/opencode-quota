@@ -41,6 +41,10 @@ export interface QuotaProviderShape {
   notes?: string;
 }
 
+export type QuotaProviderRuntimeIds = Readonly<
+  Record<CanonicalQuotaProviderId, readonly string[]>
+>;
+
 export const QUOTA_PROVIDER_LABELS: Readonly<Record<string, string>> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
@@ -69,6 +73,21 @@ export const QUOTA_PROVIDER_ID_SYNONYMS: Readonly<Record<string, string>> = {
   alibaba: "alibaba-coding-plan",
   "nano-gpt": "nanogpt",
   minimax: "minimax-coding-plan",
+};
+
+export const QUOTA_PROVIDER_RUNTIME_IDS: QuotaProviderRuntimeIds = {
+  anthropic: ["anthropic"],
+  copilot: ["copilot", "github-copilot", "copilot-chat", "github-copilot-chat"],
+  openai: ["openai"],
+  cursor: ["cursor", "cursor-acp"],
+  "qwen-code": ["qwen-code"],
+  "alibaba-coding-plan": ["alibaba-coding-plan"],
+  firmware: ["firmware"],
+  chutes: ["chutes"],
+  "google-antigravity": ["google-antigravity"],
+  zai: ["zai"],
+  nanogpt: ["nanogpt"],
+  "minimax-coding-plan": ["minimax-coding-plan"],
 };
 
 export const QUOTA_PROVIDER_SHAPES: readonly QuotaProviderShape[] = [
@@ -170,4 +189,13 @@ export function getQuotaProviderShape(id: string): QuotaProviderShape | undefine
 export function getQuotaProviderDisplayLabel(id: string): string {
   const normalized = normalizeQuotaProviderId(id);
   return QUOTA_PROVIDER_LABELS[normalized] ?? id;
+}
+
+export function getQuotaProviderRuntimeIds(id: string): readonly string[] {
+  const shape = getQuotaProviderShape(id);
+  if (!shape) {
+    return [];
+  }
+
+  return [...new Set(QUOTA_PROVIDER_RUNTIME_IDS[shape.id])];
 }

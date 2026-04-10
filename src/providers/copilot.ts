@@ -6,6 +6,7 @@
 
 import type { QuotaProvider, QuotaProviderContext, QuotaProviderResult } from "../lib/entries.js";
 import { queryCopilotQuota } from "../lib/copilot.js";
+import { isCanonicalProviderAvailable } from "../lib/provider-availability.js";
 import type { CopilotEnterpriseUsageResult, CopilotOrganizationUsageResult } from "../lib/types.js";
 
 function formatBillingPeriod(period: { year: number; month: number }): string {
@@ -36,13 +37,11 @@ export const copilotProvider: QuotaProvider = {
   id: "copilot",
 
   async isAvailable(ctx: QuotaProviderContext): Promise<boolean> {
-    try {
-      const resp = await ctx.client.config.providers();
-      const ids = new Set((resp.data?.providers ?? []).map((p) => p.id));
-      return ids.has("github-copilot") || ids.has("copilot") || ids.has("copilot-chat") || ids.has("github-copilot-chat");
-    } catch {
-      return false;
-    }
+    return isCanonicalProviderAvailable({
+      ctx,
+      providerId: "copilot",
+      fallbackOnError: false,
+    });
   },
 
   matchesCurrentModel(model: string): boolean {

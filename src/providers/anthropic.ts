@@ -14,7 +14,7 @@ import {
   hasAnthropicCredentialsConfigured,
   queryAnthropicQuota,
 } from "../lib/anthropic.js";
-import { isAnyProviderIdAvailable } from "../lib/provider-availability.js";
+import { isCanonicalProviderAvailable } from "../lib/provider-availability.js";
 
 export function getAnthropicNoDataMessage(): string {
   return "Quota unavailable via local Claude CLI";
@@ -24,9 +24,9 @@ export const anthropicProvider: QuotaProvider = {
   id: "anthropic",
 
   async isAvailable(ctx: QuotaProviderContext): Promise<boolean> {
-    const providerAvailable = await isAnyProviderIdAvailable({
+    const providerAvailable = await isCanonicalProviderAvailable({
       ctx,
-      candidateIds: ["anthropic"],
+      providerId: "anthropic",
       fallbackOnError: false,
     });
     if (!providerAvailable) {

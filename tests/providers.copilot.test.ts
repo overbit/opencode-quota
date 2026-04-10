@@ -12,6 +12,18 @@ vi.mock("../src/lib/copilot.js", () => ({
 }));
 
 describe("copilot provider", () => {
+  function makeCtx(ids: string[]) {
+    return {
+      client: {
+        config: {
+          providers: vi.fn().mockResolvedValue({ data: { providers: ids.map((id) => ({ id })) } }),
+          get: vi.fn(),
+        },
+      },
+      config: { googleModels: [] },
+    } as any;
+  }
+
   it("returns attempted:false when Copilot quota is unavailable", async () => {
     const { queryCopilotQuota } = await import("../src/lib/copilot.js");
     (queryCopilotQuota as any).mockResolvedValueOnce(null);
@@ -188,5 +200,29 @@ describe("copilot provider", () => {
 
     const out = await copilotProvider.fetch({} as any);
     expectAttemptedWithErrorLabel(out, "Copilot");
+  });
+
+  it("is available for metadata-backed Copilot runtime ids", async () => {
+    await expect(copilotProvider.isAvailable(makeCtx(["copilot"]))).resolves.toBe(true);
+    await expect(copilotProvider.isAvailable(makeCtx(["github-copilot"]))).resolves.toBe(true);
+    await expect(copilotProvider.isAvailable(makeCtx(["copilot-chat"]))).resolves.toBe(true);
+    await expect(copilotProvider.isAvailable(makeCtx(["github-copilot-chat"]))).resolves.toBe(
+      true,
+    );
+    await expect(copilotProvider.isAvailable(makeCtx(["openai"]))).resolves.toBe(false);
+  });
+
+  it("is not available when provider lookup throws", async () => {
+    const ctx = {
+      client: {
+        config: {
+          providers: vi.fn().mockRejectedValue(new Error("boom")),
+          get: vi.fn(),
+        },
+      },
+      config: { googleModels: [] },
+    } as any;
+
+    await expect(copilotProvider.isAvailable(ctx)).resolves.toBe(false);
   });
 });

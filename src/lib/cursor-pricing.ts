@@ -1,5 +1,6 @@
 import type { CursorQuotaPlan } from "./types.js";
 import type { CostBuckets } from "./modelsdev-pricing.js";
+import { getQuotaProviderRuntimeIds } from "./provider-metadata.js";
 
 export type CursorLocalPricingModel =
   | "auto"
@@ -24,8 +25,7 @@ export const CURSOR_INCLUDED_API_USD_BY_PLAN: Readonly<Record<Exclude<CursorQuot
 };
 
 const CURSOR_PROVIDER_IDS = new Set([
-  CURSOR_PROVIDER_ID,
-  CURSOR_LEGACY_PROVIDER_ID,
+  ...getQuotaProviderRuntimeIds("cursor"),
   "open-cursor",
   "@rama_nigg/open-cursor",
 ]);

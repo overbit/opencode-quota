@@ -4,7 +4,7 @@ import { expectAttemptedWithNoErrors, expectNotAttempted } from "./helpers/provi
 import { cursorProvider } from "../src/providers/cursor.js";
 
 vi.mock("../src/lib/provider-availability.js", () => ({
-  isAnyProviderIdAvailable: vi.fn(),
+  isCanonicalProviderAvailable: vi.fn(),
 }));
 
 vi.mock("../src/lib/cursor-detection.js", () => ({
@@ -115,9 +115,9 @@ describe("cursor provider", () => {
   });
 
   it("treats the current Cursor provider id as an availability signal", async () => {
-    const { isAnyProviderIdAvailable } = await import("../src/lib/provider-availability.js");
+    const { isCanonicalProviderAvailable } = await import("../src/lib/provider-availability.js");
     const { inspectCursorOpenCodeIntegration } = await import("../src/lib/cursor-detection.js");
-    (isAnyProviderIdAvailable as any).mockResolvedValue(false);
+    (isCanonicalProviderAvailable as any).mockResolvedValue(false);
     (inspectCursorOpenCodeIntegration as any).mockResolvedValue({
       pluginEnabled: false,
       providerConfigured: false,
@@ -134,9 +134,9 @@ describe("cursor provider", () => {
   });
 
   it("treats cursor models or config-file integration as availability signals", async () => {
-    const { isAnyProviderIdAvailable } = await import("../src/lib/provider-availability.js");
+    const { isCanonicalProviderAvailable } = await import("../src/lib/provider-availability.js");
     const { inspectCursorOpenCodeIntegration } = await import("../src/lib/cursor-detection.js");
-    (isAnyProviderIdAvailable as any).mockResolvedValue(false);
+    (isCanonicalProviderAvailable as any).mockResolvedValue(false);
     (inspectCursorOpenCodeIntegration as any).mockResolvedValue({
       pluginEnabled: true,
       providerConfigured: false,
@@ -155,6 +155,18 @@ describe("cursor provider", () => {
       cursorProvider.isAvailable({
         client: { config: { providers: vi.fn() } },
         config: { currentModel: "cursor-acp/auto", cursorPlan: "none" },
+      } as any),
+    ).resolves.toBe(true);
+  });
+
+  it("treats metadata-backed Cursor provider availability as a signal", async () => {
+    const { isCanonicalProviderAvailable } = await import("../src/lib/provider-availability.js");
+    (isCanonicalProviderAvailable as any).mockResolvedValue(true);
+
+    await expect(
+      cursorProvider.isAvailable({
+        client: { config: { providers: vi.fn() } },
+        config: { currentModel: "openai/gpt-5", cursorPlan: "none" },
       } as any),
     ).resolves.toBe(true);
   });
