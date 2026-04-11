@@ -156,6 +156,8 @@ interface CommandExecuteInput {
 /** Config hook shape used to register built-in commands */
 interface PluginConfigInput {
   command?: Record<string, { template: string; description: string }>;
+  agent?: Record<string, unknown>;
+  default_agent?: string;
 }
 
 type SessionModelMeta = {
@@ -1748,6 +1750,19 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
           template: spec.template,
           description: spec.description,
         };
+      }
+
+      // Fix zero-width space mismatch between default_agent and agent keys.
+      // Some plugins remap agent keys with invisible Unicode prefixes for sort
+      // ordering but set default_agent without them, causing OpenCode to crash
+      // with "default agent not found". See #39.
+      if (cfg.default_agent && cfg.agent && !(cfg.default_agent in cfg.agent)) {
+        const stripped = (s: string) => s.replace(/[\u200B\u200C\u200D\uFEFF]/g, "");
+        const target = stripped(cfg.default_agent);
+        const match = Object.keys(cfg.agent).find((k) => stripped(k) === target);
+        if (match) {
+          cfg.default_agent = match;
+        }
       }
     },
 
