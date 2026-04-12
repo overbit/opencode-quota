@@ -1759,9 +1759,9 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       if (cfg.default_agent && cfg.agent && !(cfg.default_agent in cfg.agent)) {
         const stripped = (s: string) => s.replace(/[\u200B\u200C\u200D\uFEFF]/g, "");
         const target = stripped(cfg.default_agent);
-        const match = Object.keys(cfg.agent).find((k) => stripped(k) === target);
-        if (match) {
-          cfg.default_agent = match;
+        const matches = Object.keys(cfg.agent).filter((k) => stripped(k) === target);
+        if (matches.length === 1) {
+          cfg.default_agent = matches[0];
         }
       }
     },
@@ -1847,6 +1847,16 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     event: async ({ event }: { event: PluginEvent }) => {
       const sessionID = event.properties.sessionID;
       if (!sessionID) return;
+
+      if (event.type !== "session.idle" && event.type !== "session.compacted") {
+        return;
+      }
+
+      if (!configLoaded) {
+        await refreshConfig();
+      }
+
+      if (!config.enabled) return;
 
       if (event.type === "session.idle" && config.showOnIdle) {
         await showQuotaToast(sessionID, "session.idle");

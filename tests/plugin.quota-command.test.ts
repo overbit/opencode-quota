@@ -162,6 +162,66 @@ describe("/quota command behavior", () => {
     );
   });
 
+  it("loads config before honoring the first session.idle trigger", async () => {
+    mocks.loadConfig.mockResolvedValueOnce({
+      ...DEFAULT_CONFIG,
+      enabled: true,
+      showOnIdle: false,
+      showOnCompact: false,
+      showOnQuestion: false,
+      showSessionTokens: false,
+      minIntervalMs: 60_000,
+    });
+
+    const { QuotaToastPlugin } = await import("../src/plugin.js");
+    const client = createClient();
+
+    const hooks = await QuotaToastPlugin({ client } as any);
+
+    await hooks.event?.({
+      event: {
+        type: "session.idle",
+        properties: { sessionID: "session-idle" },
+      },
+    } as any);
+
+    expect(mocks.loadConfig).toHaveBeenCalledTimes(1);
+    expect(client.tui.showToast).not.toHaveBeenCalled();
+    expect(mocks.maybeRefreshPricingSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: "init",
+        snapshotSelection: DEFAULT_CONFIG.pricingSnapshot.source,
+      }),
+    );
+  });
+
+  it("rewrites default_agent only when one zero-width-normalized key matches", async () => {
+    const { QuotaToastPlugin } = await import("../src/plugin.js");
+    const hooks = await QuotaToastPlugin({ client: createClient() } as any);
+
+    const uniqueMatch = {
+      agent: {
+        "\u200Bplanner": {},
+        coder: {},
+      },
+      default_agent: "planner",
+    };
+
+    await hooks.config?.(uniqueMatch as any);
+    expect(uniqueMatch.default_agent).toBe("\u200Bplanner");
+
+    const ambiguousMatch = {
+      agent: {
+        "\u200Bplanner": {},
+        "\u200Cplanner": {},
+      },
+      default_agent: "planner",
+    };
+
+    await hooks.config?.(ambiguousMatch as any);
+    expect(ambiguousMatch.default_agent).toBe("planner");
+  });
+
   it("renders provider errors even when no quota entries are returned", async () => {
     const provider = {
       id: "alibaba-coding-plan",

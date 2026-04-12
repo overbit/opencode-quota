@@ -6,17 +6,23 @@
  * @packageDocumentation
  */
 
-import type { PluginModule } from "@opencode-ai/plugin";
 import { QuotaToastPlugin } from "./plugin.js";
+
+type V1PluginModule = {
+  id: string;
+  server: typeof QuotaToastPlugin;
+};
 
 // V1 plugin format: default export with id + server.
 // This avoids the legacy getLegacyPlugins fallback path in OpenCode's plugin
 // loader, which iterates Object.values(mod) and can conflict with other
 // plugins that also use the legacy path.
-export default {
+const pluginModule = {
   id: "@slkiser/opencode-quota",
   server: QuotaToastPlugin,
-} satisfies PluginModule;
+} satisfies V1PluginModule;
+
+export default pluginModule;
 
 // Keep the named export for backward compatibility with consumers that import
 // { QuotaToastPlugin } directly.
