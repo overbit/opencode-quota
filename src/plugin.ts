@@ -49,14 +49,8 @@ import {
   isAlibabaModelId,
   resolveAlibabaCodingPlanAuthCached,
 } from "./lib/alibaba-auth.js";
-import {
-  isQwenCodeModelId,
-  resolveQwenLocalPlanCached,
-} from "./lib/qwen-auth.js";
-import {
-  recordAlibabaCodingPlanCompletion,
-  recordQwenCompletion,
-} from "./lib/qwen-local-quota.js";
+import { isQwenCodeModelId, resolveQwenLocalPlanCached } from "./lib/qwen-auth.js";
+import { recordAlibabaCodingPlanCompletion, recordQwenCompletion } from "./lib/qwen-local-quota.js";
 import { isCursorModelId, isCursorProviderId } from "./lib/cursor-pricing.js";
 import {
   parseOptionalJsonArgs,
@@ -162,6 +156,8 @@ interface CommandExecuteInput {
 /** Config hook shape used to register built-in commands */
 interface PluginConfigInput {
   command?: Record<string, { template: string; description: string }>;
+  agent?: Record<string, unknown>;
+  default_agent?: string;
 }
 
 type SessionModelMeta = {
@@ -288,7 +284,8 @@ const TOKEN_REPORT_COMMANDS: readonly TokenReportCommandSpec[] = [
   {
     id: "tokens_between",
     template: "/tokens_between",
-    description: "Token + deterministic cost report between two YYYY-MM-DD dates (local timezone, inclusive).",
+    description:
+      "Token + deterministic cost report between two YYYY-MM-DD dates (local timezone, inclusive).",
     titleForRange: (startYmd: Ymd, endYmd: Ymd) => {
       return `Tokens used (${formatYmd(startYmd)} .. ${formatYmd(endYmd)}) (/tokens_between)`;
     },
@@ -406,9 +403,9 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       config.enabledProviders === "auto" ? "auto" : config.enabledProviders.join(",");
     const googleModels = config.googleModels.join(",");
     const currentModel =
-      config.onlyCurrentModel && params.sessionID ? params.sessionMeta?.modelID ?? "" : "";
+      config.onlyCurrentModel && params.sessionID ? (params.sessionMeta?.modelID ?? "") : "";
     const currentProviderID =
-      config.onlyCurrentModel && params.sessionID ? params.sessionMeta?.providerID ?? "" : "";
+      config.onlyCurrentModel && params.sessionID ? (params.sessionMeta?.providerID ?? "") : "";
 
     return [
       `sessionID=${params.sessionID ?? ""}`,
@@ -663,6 +660,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
         setPricingSnapshotAutoRefresh(config.pricingSnapshot.autoRefresh);
         setPricingSnapshotSelection(config.pricingSnapshot.source);
         configLoaded = true;
+        onFirstConfigLoaded();
       } catch {
         // Leave configLoaded=false so we can retry on next trigger.
         config = DEFAULT_CONFIG;
@@ -705,15 +703,20 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     }
   }
 
-  // Best-effort async init (do not await)
-  void (async () => {
-    await refreshConfig();
+  // Deferred init: runs once after the first successful config load.
+  // Avoids HTTP calls during plugin construction, which can interfere with
+  // other plugins that are still being loaded (see #39).
+  let initDone = false;
+  function onFirstConfigLoaded(): void {
+    if (initDone) return;
+    initDone = true;
+
     if (config.enabled) {
       void kickPricingRefresh({ reason: "init" });
     }
 
-    try {
-      await typedClient.app.log({
+    void typedClient.app
+      .log({
         body: {
           service: "quota-toast",
           level: "info",
@@ -736,11 +739,9 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
             showOnBothFail: config.showOnBothFail,
           },
         },
-      });
-    } catch {
-      // ignore
-    }
-  })();
+      })
+      .catch(() => {});
+  }
 
   // If disabled in config, it'll be picked up on first trigger; we can't
   // reliably read config synchronously without risking TUI startup.
@@ -806,7 +807,9 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
       return true;
     }
     if (!params.currentModel) return false;
-    return params.provider.matchesCurrentModel ? params.provider.matchesCurrentModel(params.currentModel) : true;
+    return params.provider.matchesCurrentModel
+      ? params.provider.matchesCurrentModel(params.currentModel)
+      : true;
   }
 
   function formatDebugInfo(params: {
@@ -1712,9 +1715,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
     const out = await buildStatusReport({
       refreshGoogleTokens: parsed.value["refreshGoogleTokens"] === true,
       skewMs:
-        typeof parsed.value["skewMs"] === "number"
-          ? (parsed.value["skewMs"] as number)
-          : undefined,
+        typeof parsed.value["skewMs"] === "number" ? (parsed.value["skewMs"] as number) : undefined,
       force: parsed.value["force"] === true,
       sessionID,
       generatedAtMs,
@@ -1749,6 +1750,19 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
           template: spec.template,
           description: spec.description,
         };
+      }
+
+      // Fix zero-width space mismatch between default_agent and agent keys.
+      // Some plugins remap agent keys with invisible Unicode prefixes for sort
+      // ordering but set default_agent without them, causing OpenCode to crash
+      // with "default agent not found". See #39.
+      if (cfg.default_agent && cfg.agent && !(cfg.default_agent in cfg.agent)) {
+        const stripped = (s: string) => s.replace(/[\u200B\u200C\u200D\uFEFF]/g, "");
+        const target = stripped(cfg.default_agent);
+        const matches = Object.keys(cfg.agent).filter((k) => stripped(k) === target);
+        if (matches.length === 1) {
+          cfg.default_agent = matches[0];
+        }
       }
     },
 
@@ -1827,13 +1841,22 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
           return ""; // Empty return - output already injected with noReply
         },
       }),
-
     },
 
     // Event hook for session.idle and session.compacted
     event: async ({ event }: { event: PluginEvent }) => {
       const sessionID = event.properties.sessionID;
       if (!sessionID) return;
+
+      if (event.type !== "session.idle" && event.type !== "session.compacted") {
+        return;
+      }
+
+      if (!configLoaded) {
+        await refreshConfig();
+      }
+
+      if (!config.enabled) return;
 
       if (event.type === "session.idle" && config.showOnIdle) {
         await showQuotaToast(sessionID, "session.idle");
@@ -1852,7 +1875,7 @@ export const QuotaToastPlugin: Plugin = async ({ client }) => {
 
       if (!config.enabled) return;
 
-          if (isSuccessfulQuestionExecution(output)) {
+      if (isSuccessfulQuestionExecution(output)) {
         const sessionMeta = await getSessionModelMeta(input.sessionID);
         const model = sessionMeta.modelID;
         try {
