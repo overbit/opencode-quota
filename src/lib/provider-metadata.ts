@@ -127,6 +127,7 @@ export const QUOTA_PROVIDER_SHAPES: readonly QuotaProviderShape[] = [
     id: "alibaba-coding-plan",
     autoSetup: "yes",
     authentication: "opencode_auth_api_key",
+    authFallbacks: ["env_api_key", "global_opencode_config"],
     quota: "local_estimation",
   },
   {
@@ -153,6 +154,7 @@ export const QUOTA_PROVIDER_SHAPES: readonly QuotaProviderShape[] = [
     id: "zai",
     autoSetup: "yes",
     authentication: "opencode_auth_api_key",
+    authFallbacks: ["env_api_key", "global_opencode_config"],
     quota: "remote_api",
   },
   {
@@ -166,6 +168,7 @@ export const QUOTA_PROVIDER_SHAPES: readonly QuotaProviderShape[] = [
     id: "minimax-coding-plan",
     autoSetup: "yes",
     authentication: "opencode_auth_api_key",
+    authFallbacks: ["env_api_key", "global_opencode_config"],
     quota: "remote_api",
   },
   {

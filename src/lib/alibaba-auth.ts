@@ -1,10 +1,25 @@
-import { getFirstAuthEntryRecord } from "./api-key-resolver.js";
+import {
+  extractProviderOptionsApiKey,
+  getApiKeyCheckedPaths,
+  getFirstAuthEntryRecord,
+  getGlobalOpencodeConfigCandidatePaths,
+  resolveApiKeyFromEnvAndConfig,
+} from "./api-key-resolver.js";
 import { getAuthPaths, readAuthFileCached } from "./opencode-auth.js";
 import type { AlibabaAuthData, AlibabaCodingPlanTier, AuthData } from "./types.js";
 
 export const DEFAULT_ALIBABA_AUTH_CACHE_MAX_AGE_MS = 5_000;
 const ALIBABA_AUTH_KEYS = ["alibaba-coding-plan", "alibaba"] as const;
+const ALIBABA_PROVIDER_KEYS = ["alibaba-coding-plan", "alibaba"] as const;
+const ALLOWED_ALIBABA_ENV_VARS = ["ALIBABA_CODING_PLAN_API_KEY", "ALIBABA_API_KEY"] as const;
 const DEFAULT_ALIBABA_CODING_PLAN_TIER: AlibabaCodingPlanTier = "lite";
+
+export type AlibabaCodingPlanKeySource =
+  | "env:ALIBABA_CODING_PLAN_API_KEY"
+  | "env:ALIBABA_API_KEY"
+  | "opencode.json"
+  | "opencode.jsonc"
+  | "auth.json";
 
 export type ResolvedAlibabaCodingPlanAuth =
   | { state: "none" }
@@ -16,20 +31,25 @@ export type AlibabaCodingPlanAuthDiagnostics =
       state: "none";
       source: null;
       checkedPaths: string[];
+      authPaths: string[];
     }
   | {
       state: "configured";
-      source: "auth.json";
+      source: AlibabaCodingPlanKeySource;
       checkedPaths: string[];
+      authPaths: string[];
       tier: AlibabaCodingPlanTier;
     }
   | {
       state: "invalid";
       source: "auth.json";
       checkedPaths: string[];
+      authPaths: string[];
       error: string;
       rawTier?: string;
     };
+
+export { getGlobalOpencodeConfigCandidatePaths as getOpencodeConfigCandidatePaths } from "./api-key-resolver.js";
 
 function getFirstString(obj: Record<string, unknown>, keys: string[]): string | undefined {
   for (const key of keys) {
@@ -115,29 +135,79 @@ export function resolveAlibabaCodingPlanAuth(
   };
 }
 
+async function resolveAlibabaCodingPlanAuthWithSource(params?: {
+  maxAgeMs?: number;
+  fallbackTier?: AlibabaCodingPlanTier;
+}): Promise<{
+  auth: ResolvedAlibabaCodingPlanAuth;
+  source: AlibabaCodingPlanKeySource | null;
+}> {
+  const fallbackTier = params?.fallbackTier ?? DEFAULT_ALIBABA_CODING_PLAN_TIER;
+  const resolvedFromEnvOrConfig = await resolveApiKeyFromEnvAndConfig<AlibabaCodingPlanKeySource>({
+    envVars: [
+      {
+        name: "ALIBABA_CODING_PLAN_API_KEY",
+        source: "env:ALIBABA_CODING_PLAN_API_KEY",
+      },
+      { name: "ALIBABA_API_KEY", source: "env:ALIBABA_API_KEY" },
+    ],
+    extractFromConfig: (config) =>
+      extractProviderOptionsApiKey(config, {
+        providerKeys: ALIBABA_PROVIDER_KEYS,
+        allowedEnvVars: ALLOWED_ALIBABA_ENV_VARS,
+      }),
+    configJsonSource: "opencode.json",
+    configJsoncSource: "opencode.jsonc",
+    getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
+  });
+
+  if (resolvedFromEnvOrConfig) {
+    return {
+      auth: {
+        state: "configured",
+        apiKey: resolvedFromEnvOrConfig.key,
+        tier: fallbackTier,
+      },
+      source: resolvedFromEnvOrConfig.source,
+    };
+  }
+
+  const maxAgeMs = Math.max(0, params?.maxAgeMs ?? DEFAULT_ALIBABA_AUTH_CACHE_MAX_AGE_MS);
+  const authData = await readAuthFileCached({
+    maxAgeMs,
+  });
+  const auth = resolveAlibabaCodingPlanAuth(authData, fallbackTier);
+
+  return {
+    auth,
+    source: auth.state === "none" ? null : "auth.json",
+  };
+}
+
 export async function resolveAlibabaCodingPlanAuthCached(params?: {
   maxAgeMs?: number;
   fallbackTier?: AlibabaCodingPlanTier;
 }): Promise<ResolvedAlibabaCodingPlanAuth> {
-  const maxAgeMs = Math.max(0, params?.maxAgeMs ?? DEFAULT_ALIBABA_AUTH_CACHE_MAX_AGE_MS);
-  const auth = await readAuthFileCached({
-    maxAgeMs,
-  });
-  return resolveAlibabaCodingPlanAuth(auth, params?.fallbackTier);
+  return (await resolveAlibabaCodingPlanAuthWithSource(params)).auth;
 }
 
 export async function getAlibabaCodingPlanAuthDiagnostics(params?: {
   maxAgeMs?: number;
   fallbackTier?: AlibabaCodingPlanTier;
 }): Promise<AlibabaCodingPlanAuthDiagnostics> {
-  const auth = await resolveAlibabaCodingPlanAuthCached(params);
-  const checkedPaths = getAuthPaths();
+  const { auth, source } = await resolveAlibabaCodingPlanAuthWithSource(params);
+  const checkedPaths = getApiKeyCheckedPaths({
+    envVarNames: [...ALLOWED_ALIBABA_ENV_VARS],
+    getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
+  });
+  const authPaths = getAuthPaths();
 
   if (auth.state === "none") {
     return {
       state: "none",
       source: null,
       checkedPaths,
+      authPaths,
     };
   }
 
@@ -146,6 +216,7 @@ export async function getAlibabaCodingPlanAuthDiagnostics(params?: {
       state: "invalid",
       source: "auth.json",
       checkedPaths,
+      authPaths,
       error: auth.error,
       rawTier: auth.rawTier,
     };
@@ -153,8 +224,9 @@ export async function getAlibabaCodingPlanAuthDiagnostics(params?: {
 
   return {
     state: "configured",
-    source: "auth.json",
+    source: source ?? "auth.json",
     checkedPaths,
+    authPaths,
     tier: auth.tier,
   };
 }

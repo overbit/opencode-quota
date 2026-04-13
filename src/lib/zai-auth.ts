@@ -1,4 +1,10 @@
-import { getFirstAuthEntryValue } from "./api-key-resolver.js";
+import {
+  extractProviderOptionsApiKey,
+  getApiKeyCheckedPaths,
+  getFirstAuthEntryValue,
+  getGlobalOpencodeConfigCandidatePaths,
+  resolveApiKeyFromEnvAndConfig,
+} from "./api-key-resolver.js";
 import { sanitizeDisplayText } from "./display-sanitize.js";
 import { getAuthPaths, readAuthFileCached } from "./opencode-auth.js";
 
@@ -6,6 +12,15 @@ import type { AuthData, ZaiAuthData } from "./types.js";
 
 export const DEFAULT_ZAI_AUTH_CACHE_MAX_AGE_MS = 5_000;
 const ZAI_AUTH_KEYS = ["zai-coding-plan"] as const;
+const ZAI_PROVIDER_KEYS = ["zai", "zai-coding-plan", "glm"] as const;
+const ALLOWED_ZAI_ENV_VARS = ["ZAI_API_KEY", "ZAI_CODING_PLAN_API_KEY"] as const;
+
+export type ZaiKeySource =
+  | "env:ZAI_API_KEY"
+  | "env:ZAI_CODING_PLAN_API_KEY"
+  | "opencode.json"
+  | "opencode.jsonc"
+  | "auth.json";
 
 export type ResolvedZaiAuth =
   | { state: "none" }
@@ -17,18 +32,23 @@ export type ZaiAuthDiagnostics =
       state: "none";
       source: null;
       checkedPaths: string[];
+      authPaths: string[];
     }
   | {
       state: "configured";
-      source: "auth.json";
+      source: ZaiKeySource;
       checkedPaths: string[];
+      authPaths: string[];
     }
   | {
       state: "invalid";
       source: "auth.json";
       checkedPaths: string[];
+      authPaths: string[];
       error: string;
     };
+
+export { getGlobalOpencodeConfigCandidatePaths as getOpencodeConfigCandidatePaths } from "./api-key-resolver.js";
 
 function getZaiAuthEntry(auth: AuthData | null | undefined): unknown {
   return getFirstAuthEntryValue(auth, ZAI_AUTH_KEYS);
@@ -72,25 +92,66 @@ export function resolveZaiAuth(auth: AuthData | null | undefined): ResolvedZaiAu
   return { state: "configured", apiKey: key };
 }
 
+async function resolveZaiAuthWithSource(params?: {
+  maxAgeMs?: number;
+}): Promise<{ auth: ResolvedZaiAuth; source: ZaiKeySource | null }> {
+  const resolvedFromEnvOrConfig = await resolveApiKeyFromEnvAndConfig<ZaiKeySource>({
+    envVars: [
+      { name: "ZAI_API_KEY", source: "env:ZAI_API_KEY" },
+      {
+        name: "ZAI_CODING_PLAN_API_KEY",
+        source: "env:ZAI_CODING_PLAN_API_KEY",
+      },
+    ],
+    extractFromConfig: (config) =>
+      extractProviderOptionsApiKey(config, {
+        providerKeys: ZAI_PROVIDER_KEYS,
+        allowedEnvVars: ALLOWED_ZAI_ENV_VARS,
+      }),
+    configJsonSource: "opencode.json",
+    configJsoncSource: "opencode.jsonc",
+    getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
+  });
+
+  if (resolvedFromEnvOrConfig) {
+    return {
+      auth: { state: "configured", apiKey: resolvedFromEnvOrConfig.key },
+      source: resolvedFromEnvOrConfig.source,
+    };
+  }
+
+  const maxAgeMs = Math.max(0, params?.maxAgeMs ?? DEFAULT_ZAI_AUTH_CACHE_MAX_AGE_MS);
+  const authData = await readAuthFileCached({ maxAgeMs });
+  const auth = resolveZaiAuth(authData);
+
+  return {
+    auth,
+    source: auth.state === "none" ? null : "auth.json",
+  };
+}
+
 export async function resolveZaiAuthCached(params?: {
   maxAgeMs?: number;
 }): Promise<ResolvedZaiAuth> {
-  const maxAgeMs = Math.max(0, params?.maxAgeMs ?? DEFAULT_ZAI_AUTH_CACHE_MAX_AGE_MS);
-  const auth = await readAuthFileCached({ maxAgeMs });
-  return resolveZaiAuth(auth);
+  return (await resolveZaiAuthWithSource(params)).auth;
 }
 
 export async function getZaiAuthDiagnostics(params?: {
   maxAgeMs?: number;
 }): Promise<ZaiAuthDiagnostics> {
-  const auth = await resolveZaiAuthCached(params);
-  const checkedPaths = getAuthPaths();
+  const { auth, source } = await resolveZaiAuthWithSource(params);
+  const checkedPaths = getApiKeyCheckedPaths({
+    envVarNames: [...ALLOWED_ZAI_ENV_VARS],
+    getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
+  });
+  const authPaths = getAuthPaths();
 
   if (auth.state === "none") {
     return {
       state: "none",
       source: null,
       checkedPaths,
+      authPaths,
     };
   }
 
@@ -99,13 +160,15 @@ export async function getZaiAuthDiagnostics(params?: {
       state: "invalid",
       source: "auth.json",
       checkedPaths,
+      authPaths,
       error: auth.error,
     };
   }
 
   return {
     state: "configured",
-    source: "auth.json",
+    source: source ?? "auth.json",
     checkedPaths,
+    authPaths,
   };
 }

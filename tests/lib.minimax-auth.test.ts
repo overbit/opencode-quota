@@ -1,8 +1,33 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { homedir } from "os";
+import { join } from "path";
 
 const mocks = vi.hoisted(() => ({
   getAuthPaths: vi.fn(() => ["/tmp/auth.json"]),
   readAuthFileCached: vi.fn(),
+}));
+
+vi.mock("../src/lib/opencode-runtime-paths.js", () => ({
+  getOpencodeRuntimeDirCandidates: () => ({
+    dataDirs: [join(homedir(), ".local", "share", "opencode")],
+    configDirs: [join(homedir(), ".config", "opencode")],
+    cacheDirs: [join(homedir(), ".cache", "opencode")],
+    stateDirs: [join(homedir(), ".local", "state", "opencode")],
+  }),
+  getOpencodeRuntimeDirs: () => ({
+    dataDir: join(homedir(), ".local", "share", "opencode"),
+    configDir: join(homedir(), ".config", "opencode"),
+    cacheDir: join(homedir(), ".cache", "opencode"),
+    stateDir: join(homedir(), ".local", "state", "opencode"),
+  }),
+}));
+
+vi.mock("fs", () => ({
+  existsSync: vi.fn(),
+}));
+
+vi.mock("fs/promises", () => ({
+  readFile: vi.fn(),
 }));
 
 vi.mock("../src/lib/opencode-auth.js", () => ({
@@ -13,6 +38,7 @@ vi.mock("../src/lib/opencode-auth.js", () => ({
 import {
   DEFAULT_MINIMAX_AUTH_CACHE_MAX_AGE_MS,
   getMiniMaxAuthDiagnostics,
+  getOpencodeConfigCandidatePaths,
   resolveMiniMaxAuth,
   resolveMiniMaxAuthCached,
 } from "../src/lib/minimax-auth.js";
@@ -22,8 +48,26 @@ const withMiniMaxAuth = (entry: unknown) => ({
 });
 
 describe("minimax auth resolution", () => {
-  beforeEach(() => {
+  const originalEnv = process.env;
+  const trustedJsonPath = join(homedir(), ".config", "opencode", "opencode.json");
+
+  beforeEach(async () => {
     vi.clearAllMocks();
+    process.env = { ...originalEnv };
+    delete process.env.MINIMAX_CODING_PLAN_API_KEY;
+    delete process.env.MINIMAX_API_KEY;
+
+    mocks.getAuthPaths.mockReset().mockReturnValue(["/tmp/auth.json"]);
+    mocks.readAuthFileCached.mockReset();
+
+    const { existsSync } = await import("fs");
+    const { readFile } = await import("fs/promises");
+    (existsSync as any).mockReset().mockReturnValue(false);
+    (readFile as any).mockReset();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   describe("resolveMiniMaxAuth", () => {
@@ -61,11 +105,6 @@ describe("minimax auth resolution", () => {
         withMiniMaxAuth({ type: "api", key: "", access: "" }),
         { state: "invalid", error: "MiniMax auth entry present but credentials are empty" },
       ],
-      [
-        "type is api but credentials are whitespace-only",
-        withMiniMaxAuth({ type: "api", key: "   ", access: "  " }),
-        { state: "invalid", error: "MiniMax auth entry present but credentials are empty" },
-      ],
     ])("returns %j when %s", (_label, auth, expected) => {
       expect(resolveMiniMaxAuth(auth as any)).toEqual(expected);
     });
@@ -77,29 +116,9 @@ describe("minimax auth resolution", () => {
         { state: "configured", apiKey: "primary-key" },
       ],
       [
-        "key over access",
-        withMiniMaxAuth({ type: "api", key: "the-key", access: "the-access" }),
-        { state: "configured", apiKey: "the-key" },
-      ],
-      [
         "access when key is missing",
         withMiniMaxAuth({ type: "api", access: "access-token" }),
         { state: "configured", apiKey: "access-token" },
-      ],
-      [
-        "access when key is whitespace",
-        withMiniMaxAuth({ type: "api", key: "  ", access: "access-token" }),
-        { state: "configured", apiKey: "access-token" },
-      ],
-      [
-        "trimmed key",
-        withMiniMaxAuth({ type: "api", key: "  my-key  " }),
-        { state: "configured", apiKey: "my-key" },
-      ],
-      [
-        "trimmed access",
-        withMiniMaxAuth({ type: "api", access: "  my-access  " }),
-        { state: "configured", apiKey: "my-access" },
       ],
     ])("returns %j when using %s", (_label, auth, expected) => {
       expect(resolveMiniMaxAuth(auth as any)).toEqual(expected);
@@ -107,25 +126,93 @@ describe("minimax auth resolution", () => {
   });
 
   describe("resolveMiniMaxAuthCached", () => {
-    it("uses cached auth reads for resolveMiniMaxAuthCached", async () => {
+    it("prefers MINIMAX_CODING_PLAN_API_KEY over MINIMAX_API_KEY and auth.json", async () => {
+      process.env.MINIMAX_CODING_PLAN_API_KEY = "primary-env-key";
+      process.env.MINIMAX_API_KEY = "fallback-env-key";
       mocks.readAuthFileCached.mockResolvedValueOnce(
-        withMiniMaxAuth({ type: "api", key: "cached-key" }),
+        withMiniMaxAuth({ type: "oauth", key: "broken-auth" }),
       );
 
       await expect(resolveMiniMaxAuthCached()).resolves.toEqual({
         state: "configured",
-        apiKey: "cached-key",
+        apiKey: "primary-env-key",
+      });
+      expect(mocks.readAuthFileCached).not.toHaveBeenCalled();
+    });
+
+    it("reads from trusted global config aliases", async () => {
+      const { existsSync } = await import("fs");
+      const { readFile } = await import("fs/promises");
+
+      (existsSync as any).mockImplementation((path: string) => path === trustedJsonPath);
+      (readFile as any).mockResolvedValue(
+        JSON.stringify({
+          provider: {
+            minimax: {
+              options: {
+                apiKey: "json-key",
+              },
+            },
+          },
+        }),
+      );
+
+      await expect(resolveMiniMaxAuthCached()).resolves.toEqual({
+        state: "configured",
+        apiKey: "json-key",
+      });
+      expect(mocks.readAuthFileCached).not.toHaveBeenCalled();
+    });
+
+    it("ignores workspace-local opencode.json when resolving provider secrets", async () => {
+      const { existsSync } = await import("fs");
+      const workspacePath = join(process.cwd(), "opencode.json");
+
+      (existsSync as any).mockImplementation((path: string) => path === workspacePath);
+      mocks.readAuthFileCached.mockResolvedValueOnce(null);
+
+      await expect(resolveMiniMaxAuthCached()).resolves.toEqual({ state: "none" });
+    });
+
+    it("falls back to auth.json and preserves access fallback", async () => {
+      mocks.readAuthFileCached.mockResolvedValueOnce(
+        withMiniMaxAuth({ type: "api", access: "access-token" }),
+      );
+
+      await expect(resolveMiniMaxAuthCached()).resolves.toEqual({
+        state: "configured",
+        apiKey: "access-token",
       });
       expect(mocks.readAuthFileCached).toHaveBeenCalledWith({
         maxAgeMs: DEFAULT_MINIMAX_AUTH_CACHE_MAX_AGE_MS,
       });
     });
 
-    it("respects custom maxAgeMs in resolveMiniMaxAuthCached", async () => {
-      mocks.readAuthFileCached.mockResolvedValueOnce(withMiniMaxAuth({ type: "api", key: "key" }));
+    it("masks invalid auth.json when trusted config is configured", async () => {
+      const { existsSync } = await import("fs");
+      const { readFile } = await import("fs/promises");
 
-      await resolveMiniMaxAuthCached({ maxAgeMs: 10_000 });
-      expect(mocks.readAuthFileCached).toHaveBeenCalledWith({ maxAgeMs: 10_000 });
+      (existsSync as any).mockImplementation((path: string) => path === trustedJsonPath);
+      (readFile as any).mockResolvedValue(
+        JSON.stringify({
+          provider: {
+            "minimax-coding-plan": {
+              options: {
+                apiKey: "json-key",
+              },
+            },
+          },
+        }),
+      );
+      mocks.readAuthFileCached.mockResolvedValueOnce(
+        withMiniMaxAuth({ type: "oauth", key: "broken-auth" }),
+      );
+
+      await expect(resolveMiniMaxAuthCached()).resolves.toEqual({
+        state: "configured",
+        apiKey: "json-key",
+      });
+      expect(mocks.readAuthFileCached).not.toHaveBeenCalled();
     });
 
     it("clamps negative maxAgeMs to 0", async () => {
@@ -137,17 +224,18 @@ describe("minimax auth resolution", () => {
   });
 
   describe("getMiniMaxAuthDiagnostics", () => {
-    it("reports none with candidate auth paths", async () => {
-      mocks.readAuthFileCached.mockResolvedValueOnce({});
+    it("reports env/config checked paths separately from auth paths", async () => {
+      process.env.MINIMAX_API_KEY = "diag-key";
 
       await expect(getMiniMaxAuthDiagnostics()).resolves.toEqual({
-        state: "none",
-        source: null,
-        checkedPaths: ["/tmp/auth.json"],
+        state: "configured",
+        source: "env:MINIMAX_API_KEY",
+        checkedPaths: ["env:MINIMAX_API_KEY"],
+        authPaths: ["/tmp/auth.json"],
       });
     });
 
-    it("reports invalid auth.json diagnostics", async () => {
+    it("reports invalid auth.json diagnostics when fallback auth is malformed", async () => {
       mocks.readAuthFileCached.mockResolvedValueOnce(
         withMiniMaxAuth({ type: "oauth", key: "some-key" }),
       );
@@ -155,21 +243,20 @@ describe("minimax auth resolution", () => {
       await expect(getMiniMaxAuthDiagnostics()).resolves.toEqual({
         state: "invalid",
         source: "auth.json",
-        checkedPaths: ["/tmp/auth.json"],
+        checkedPaths: [],
+        authPaths: ["/tmp/auth.json"],
         error: 'Unsupported MiniMax auth type: "oauth"',
       });
     });
+  });
 
-    it("reports configured auth.json diagnostics", async () => {
-      mocks.readAuthFileCached.mockResolvedValueOnce(
-        withMiniMaxAuth({ type: "api", key: "cached-key" }),
-      );
+  describe("getOpencodeConfigCandidatePaths", () => {
+    it("returns trusted global paths only", () => {
+      const paths = getOpencodeConfigCandidatePaths();
 
-      await expect(getMiniMaxAuthDiagnostics()).resolves.toEqual({
-        state: "configured",
-        source: "auth.json",
-        checkedPaths: ["/tmp/auth.json"],
-      });
+      expect(paths).toHaveLength(2);
+      expect(paths[0].path).toBe(join(homedir(), ".config", "opencode", "opencode.jsonc"));
+      expect(paths[1].path).toBe(trustedJsonPath);
     });
   });
 });

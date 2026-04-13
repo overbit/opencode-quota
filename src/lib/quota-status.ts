@@ -20,7 +20,7 @@ import {
 import {
   DEFAULT_ALIBABA_AUTH_CACHE_MAX_AGE_MS,
   getAlibabaCodingPlanAuthDiagnostics,
-  resolveAlibabaCodingPlanAuth,
+  resolveAlibabaCodingPlanAuthCached,
 } from "./alibaba-auth.js";
 import { hasQwenOAuthAuth, resolveQwenLocalPlan } from "./qwen-auth.js";
 import { resolveOpenAIOAuth } from "./openai.js";
@@ -429,10 +429,10 @@ export async function buildQuotaStatusReport(params: {
     maxAgeMs: DEFAULT_ALIBABA_AUTH_CACHE_MAX_AGE_MS,
     fallbackTier: params.alibabaCodingPlanTier,
   });
-  const alibabaCodingPlanAuth = resolveAlibabaCodingPlanAuth(
-    authData,
-    params.alibabaCodingPlanTier,
-  );
+  const alibabaCodingPlanAuth = await resolveAlibabaCodingPlanAuthCached({
+    maxAgeMs: DEFAULT_ALIBABA_AUTH_CACHE_MAX_AGE_MS,
+    fallbackTier: params.alibabaCodingPlanTier,
+  });
   lines.push(`- qwen oauth auth configured: ${qwenAuthConfigured ? "true" : "false"}`);
   lines.push(
     `- qwen_oauth_source: ${qwenLocalPlan.state === "qwen_free" ? qwenLocalPlan.sourceKey : "(none)"}`,
@@ -443,10 +443,18 @@ export async function buildQuotaStatusReport(params: {
   lines.push(
     `- alibaba auth configured: ${alibabaAuthDiagnostics.state === "none" ? "false" : "true"}`,
   );
+  lines.push(`- alibaba_api_key_source: ${alibabaAuthDiagnostics.source ?? "(none)"}`);
+  lines.push(
+    `- alibaba_api_key_checked_paths: ${joinOrNone(alibabaAuthDiagnostics.checkedPaths)}`,
+  );
+  lines.push(`- alibaba_api_key_auth_paths: ${joinOrNone(alibabaAuthDiagnostics.authPaths)}`);
   lines.push(`- alibaba coding plan fallback tier: ${params.alibabaCodingPlanTier}`);
   lines.push(
     `- alibaba_coding_plan: ${alibabaAuthDiagnostics.state === "configured" ? alibabaAuthDiagnostics.tier : alibabaAuthDiagnostics.state === "invalid" ? "invalid" : "(none)"}`,
   );
+  if (alibabaAuthDiagnostics.state === "invalid") {
+    lines.push(`- alibaba_auth_error: ${sanitizeDisplayText(alibabaAuthDiagnostics.error)}`);
+  }
 
   lines.push("");
   lines.push("openai:");
@@ -604,7 +612,8 @@ export async function buildQuotaStatusReport(params: {
   lines.push(`- auth_state: ${minimaxAuth.state}`);
   lines.push(`- api_key_configured: ${minimaxAuth.state === "configured" ? "true" : "false"}`);
   lines.push(`- api_key_source: ${minimaxAuth.source ?? "(none)"}`);
-  lines.push(`- api_key_auth_paths: ${joinOrNone(minimaxAuth.checkedPaths)}`);
+  lines.push(`- api_key_checked_paths: ${joinOrNone(minimaxAuth.checkedPaths)}`);
+  lines.push(`- api_key_auth_paths: ${joinOrNone(minimaxAuth.authPaths)}`);
   if (minimaxAuth.state === "invalid") {
     lines.push(`- auth_error: ${sanitizeDisplayText(minimaxAuth.error)}`);
   }
@@ -681,7 +690,8 @@ export async function buildQuotaStatusReport(params: {
   lines.push(`- auth_state: ${zaiAuth.state}`);
   lines.push(`- api_key_configured: ${zaiAuth.state === "configured" ? "true" : "false"}`);
   lines.push(`- api_key_source: ${zaiAuth.source ?? "(none)"}`);
-  lines.push(`- api_key_auth_paths: ${joinOrNone(zaiAuth.checkedPaths)}`);
+  lines.push(`- api_key_checked_paths: ${joinOrNone(zaiAuth.checkedPaths)}`);
+  lines.push(`- api_key_auth_paths: ${joinOrNone(zaiAuth.authPaths)}`);
   if (zaiAuth.state === "invalid") {
     lines.push(`- auth_error: ${sanitizeDisplayText(zaiAuth.error)}`);
   }

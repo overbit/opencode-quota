@@ -158,8 +158,8 @@ export function extractAuthApiKeyEntry(
   return null;
 }
 
-/** Configuration for resolving an API key from multiple sources */
-export interface ResolveApiKeyConfig<Source extends string> {
+/** Configuration for resolving an API key from trusted env/config sources */
+export interface ResolveEnvAndConfigApiKeyConfig<Source extends string> {
   /** Environment variables to check (in order) */
   envVars: EnvVarDef<Source>[];
 
@@ -172,31 +172,47 @@ export interface ResolveApiKeyConfig<Source extends string> {
   /** Source label for opencode.jsonc */
   configJsoncSource: Source;
 
+  /**
+   * Candidate config file paths to trust for provider-secret lookup.
+   *
+   * Defaults to trusted user/global OpenCode config paths only.
+   */
+  getConfigCandidates?: () => ConfigCandidate[];
+}
+
+/** Configuration for resolving an API key from multiple sources */
+export interface ResolveApiKeyConfig<Source extends string>
+  extends ResolveEnvAndConfigApiKeyConfig<Source> {
+
   /** Extract API key from auth.json data. Returns null if not found. */
   extractFromAuth: (auth: unknown) => string | null;
 
   /** Source label for auth.json */
   authSource: Source;
+}
 
-  /** Candidate config file paths to trust for provider-secret lookup. */
+export interface ApiKeyCheckedPathsConfig {
+  /** Environment variable names to check */
+  envVarNames: string[];
+
+  /**
+   * Candidate config file paths to report for provider-secret lookup.
+   *
+   * Defaults to trusted user/global OpenCode config paths only.
+   */
   getConfigCandidates?: () => ConfigCandidate[];
 }
 
 /**
- * Resolve an API key from multiple sources with consistent priority.
+ * Resolve an API key from trusted env vars and config files.
  *
  * Priority (first wins):
  * 1. Environment variables (in order specified)
- * 2. opencode.json/opencode.jsonc (local first, then global)
- * 3. auth.json
- *
- * @returns API key and source, or null if not found
+ * 2. Trusted user/global opencode.json/opencode.jsonc candidates
  */
-export async function resolveApiKey<Source extends string>(
-  config: ResolveApiKeyConfig<Source>,
-  readAuth: () => Promise<unknown | null>,
+export async function resolveApiKeyFromEnvAndConfig<Source extends string>(
+  config: ResolveEnvAndConfigApiKeyConfig<Source>,
 ): Promise<ApiKeyResult<Source> | null> {
-  // 1. Check environment variables (highest priority)
   for (const envVar of config.envVars) {
     const value = process.env[envVar.name]?.trim();
     if (value && value.length > 0) {
@@ -204,8 +220,7 @@ export async function resolveApiKey<Source extends string>(
     }
   }
 
-  // 2. Check opencode.json/opencode.jsonc files
-  const candidates = config.getConfigCandidates?.() ?? getOpencodeConfigCandidatePaths();
+  const candidates = config.getConfigCandidates?.() ?? getGlobalOpencodeConfigCandidatePaths();
   for (const candidate of candidates) {
     const result = await readOpencodeConfig(candidate.path, candidate.isJsonc);
     if (!result) continue;
@@ -217,6 +232,47 @@ export async function resolveApiKey<Source extends string>(
         source: result.isJsonc ? config.configJsoncSource : config.configJsonSource,
       };
     }
+  }
+
+  return null;
+}
+
+export function getApiKeyCheckedPaths(config: ApiKeyCheckedPathsConfig): string[] {
+  const checkedPaths: string[] = [];
+
+  for (const envVarName of config.envVarNames) {
+    if (process.env[envVarName] !== undefined) {
+      checkedPaths.push(`env:${envVarName}`);
+    }
+  }
+
+  const candidates = config.getConfigCandidates?.() ?? getGlobalOpencodeConfigCandidatePaths();
+  for (const candidate of candidates) {
+    if (existsSync(candidate.path)) {
+      checkedPaths.push(candidate.path);
+    }
+  }
+
+  return checkedPaths;
+}
+
+/**
+ * Resolve an API key from multiple sources with consistent priority.
+ *
+ * Priority (first wins):
+ * 1. Environment variables (in order specified)
+ * 2. Trusted user/global opencode.json/opencode.jsonc
+ * 3. auth.json
+ *
+ * @returns API key and source, or null if not found
+ */
+export async function resolveApiKey<Source extends string>(
+  config: ResolveApiKeyConfig<Source>,
+  readAuth: () => Promise<unknown | null>,
+): Promise<ApiKeyResult<Source> | null> {
+  const resolvedFromEnvOrConfig = await resolveApiKeyFromEnvAndConfig(config);
+  if (resolvedFromEnvOrConfig) {
+    return resolvedFromEnvOrConfig;
   }
 
   // 3. Fallback to auth.json
@@ -254,23 +310,7 @@ export async function getApiKeyDiagnostics<Source extends string>(
   source: Source | null;
   checkedPaths: string[];
 }> {
-  const checkedPaths: string[] = [];
-
-  // Track env vars checked (only if they exist, even if empty)
-  for (const envVarName of config.envVarNames) {
-    if (process.env[envVarName] !== undefined) {
-      checkedPaths.push(`env:${envVarName}`);
-    }
-  }
-
-  // Track config files checked (only if they exist)
-  const candidates = config.getConfigCandidates?.() ?? getOpencodeConfigCandidatePaths();
-  for (const candidate of candidates) {
-    if (existsSync(candidate.path)) {
-      checkedPaths.push(candidate.path);
-    }
-  }
-
+  const checkedPaths = getApiKeyCheckedPaths(config);
   const result = await config.resolve();
 
   return {

@@ -1,17 +1,33 @@
 /**
  * MiniMax auth resolver
  *
- * Reads MiniMax credentials from OpenCode auth.json and resolves
- * them into a standardized format for the MiniMax Coding Plan provider.
+ * Resolves MiniMax credentials from trusted env vars, trusted user/global
+ * OpenCode config, and auth.json fallback into the standardized shape used
+ * by the MiniMax Coding Plan provider.
  */
 
-import { getFirstAuthEntryValue } from "./api-key-resolver.js";
+import {
+  extractProviderOptionsApiKey,
+  getApiKeyCheckedPaths,
+  getFirstAuthEntryValue,
+  getGlobalOpencodeConfigCandidatePaths,
+  resolveApiKeyFromEnvAndConfig,
+} from "./api-key-resolver.js";
 import type { AuthData, MiniMaxAuthData } from "./types.js";
 import { sanitizeDisplayText } from "./display-sanitize.js";
 import { getAuthPaths, readAuthFileCached } from "./opencode-auth.js";
 
 export const DEFAULT_MINIMAX_AUTH_CACHE_MAX_AGE_MS = 5_000;
 const MINIMAX_AUTH_KEYS = ["minimax-coding-plan"] as const;
+const MINIMAX_PROVIDER_KEYS = ["minimax-coding-plan", "minimax"] as const;
+const ALLOWED_MINIMAX_ENV_VARS = ["MINIMAX_CODING_PLAN_API_KEY", "MINIMAX_API_KEY"] as const;
+
+export type MiniMaxKeySource =
+  | "env:MINIMAX_CODING_PLAN_API_KEY"
+  | "env:MINIMAX_API_KEY"
+  | "opencode.json"
+  | "opencode.jsonc"
+  | "auth.json";
 
 export type ResolvedMiniMaxAuth =
   | { state: "none" }
@@ -23,18 +39,23 @@ export type MiniMaxAuthDiagnostics =
       state: "none";
       source: null;
       checkedPaths: string[];
+      authPaths: string[];
     }
   | {
       state: "configured";
-      source: "auth.json";
+      source: MiniMaxKeySource;
       checkedPaths: string[];
+      authPaths: string[];
     }
   | {
       state: "invalid";
       source: "auth.json";
       checkedPaths: string[];
+      authPaths: string[];
       error: string;
     };
+
+export { getGlobalOpencodeConfigCandidatePaths as getOpencodeConfigCandidatePaths } from "./api-key-resolver.js";
 
 function getMiniMaxAuthEntry(auth: AuthData | null | undefined): unknown {
   return getFirstAuthEntryValue(auth, MINIMAX_AUTH_KEYS);
@@ -91,27 +112,68 @@ export function resolveMiniMaxAuth(auth: AuthData | null | undefined): ResolvedM
   return { state: "configured", apiKey: credential };
 }
 
+async function resolveMiniMaxAuthWithSource(params?: {
+  maxAgeMs?: number;
+}): Promise<{ auth: ResolvedMiniMaxAuth; source: MiniMaxKeySource | null }> {
+  const resolvedFromEnvOrConfig = await resolveApiKeyFromEnvAndConfig<MiniMaxKeySource>({
+    envVars: [
+      {
+        name: "MINIMAX_CODING_PLAN_API_KEY",
+        source: "env:MINIMAX_CODING_PLAN_API_KEY",
+      },
+      { name: "MINIMAX_API_KEY", source: "env:MINIMAX_API_KEY" },
+    ],
+    extractFromConfig: (config) =>
+      extractProviderOptionsApiKey(config, {
+        providerKeys: MINIMAX_PROVIDER_KEYS,
+        allowedEnvVars: ALLOWED_MINIMAX_ENV_VARS,
+      }),
+    configJsonSource: "opencode.json",
+    configJsoncSource: "opencode.jsonc",
+    getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
+  });
+
+  if (resolvedFromEnvOrConfig) {
+    return {
+      auth: { state: "configured", apiKey: resolvedFromEnvOrConfig.key },
+      source: resolvedFromEnvOrConfig.source,
+    };
+  }
+
+  const maxAgeMs = Math.max(0, params?.maxAgeMs ?? DEFAULT_MINIMAX_AUTH_CACHE_MAX_AGE_MS);
+  const authData = await readAuthFileCached({
+    maxAgeMs,
+  });
+  const auth = resolveMiniMaxAuth(authData);
+
+  return {
+    auth,
+    source: auth.state === "none" ? null : "auth.json",
+  };
+}
+
 export async function resolveMiniMaxAuthCached(params?: {
   maxAgeMs?: number;
 }): Promise<ResolvedMiniMaxAuth> {
-  const maxAgeMs = Math.max(0, params?.maxAgeMs ?? DEFAULT_MINIMAX_AUTH_CACHE_MAX_AGE_MS);
-  const auth = await readAuthFileCached({
-    maxAgeMs,
-  });
-  return resolveMiniMaxAuth(auth);
+  return (await resolveMiniMaxAuthWithSource(params)).auth;
 }
 
 export async function getMiniMaxAuthDiagnostics(params?: {
   maxAgeMs?: number;
 }): Promise<MiniMaxAuthDiagnostics> {
-  const auth = await resolveMiniMaxAuthCached(params);
-  const checkedPaths = getAuthPaths();
+  const { auth, source } = await resolveMiniMaxAuthWithSource(params);
+  const checkedPaths = getApiKeyCheckedPaths({
+    envVarNames: [...ALLOWED_MINIMAX_ENV_VARS],
+    getConfigCandidates: getGlobalOpencodeConfigCandidatePaths,
+  });
+  const authPaths = getAuthPaths();
 
   if (auth.state === "none") {
     return {
       state: "none",
       source: null,
       checkedPaths,
+      authPaths,
     };
   }
 
@@ -120,13 +182,15 @@ export async function getMiniMaxAuthDiagnostics(params?: {
       state: "invalid",
       source: "auth.json",
       checkedPaths,
+      authPaths,
       error: auth.error,
     };
   }
 
   return {
     state: "configured",
-    source: "auth.json",
+    source: source ?? "auth.json",
     checkedPaths,
+    authPaths,
   };
 }

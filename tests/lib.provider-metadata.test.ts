@@ -49,6 +49,7 @@ describe("provider-metadata", () => {
         id: "alibaba-coding-plan",
         autoSetup: "yes",
         authentication: "opencode_auth_api_key",
+        authFallbacks: ["env_api_key", "global_opencode_config"],
         quota: "local_estimation",
       },
       {
@@ -75,6 +76,7 @@ describe("provider-metadata", () => {
         id: "zai",
         autoSetup: "yes",
         authentication: "opencode_auth_api_key",
+        authFallbacks: ["env_api_key", "global_opencode_config"],
         quota: "remote_api",
       },
       {
@@ -88,6 +90,7 @@ describe("provider-metadata", () => {
         id: "minimax-coding-plan",
         autoSetup: "yes",
         authentication: "opencode_auth_api_key",
+        authFallbacks: ["env_api_key", "global_opencode_config"],
         quota: "remote_api",
       },
       {

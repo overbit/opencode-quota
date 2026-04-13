@@ -79,18 +79,18 @@ That is enough for most installs. Providers are auto-detected from your existing
 | Provider | Auto setup | Authentication | Quota |
 | --- | --- | --- | --- |
 | **Anthropic (Claude)** | Needs [quick setup](#anthropic-quick-setup) | Local CLI auth | Local CLI report |
-| **GitHub Copilot** | Usually | GitHub OAuth or PAT | Remote API |
-| **OpenAI** | Yes | OpenCode auth (OAuth token) | Remote API |
-| **Cursor** | Needs [quick setup](#cursor-quick-setup) | Companion auth (OAuth token) | Local runtime accounting |
-| **Qwen Code** | Needs [quick setup](#qwen-code-quick-setup) | Companion auth (OAuth token) | Local estimation |
-| **Alibaba Coding Plan** | Yes | OpenCode auth (API key) | Local estimation |
-| **Firmware AI** | Usually | OpenCode auth (API key; env/global config fallback) | Remote API |
-| **Chutes AI** | Usually | OpenCode auth (API key; env/global config fallback) | Remote API |
-| **Google Antigravity** | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth (OAuth token) | Remote API |
-| **Z.ai** | Yes | OpenCode auth (API key) | Remote API |
-| **NanoGPT** | Usually | OpenCode auth (API key; env/global config fallback) | Remote API |
-| **MiniMax Coding Plan** | Yes | OpenCode auth (API key) | Remote API |
-| **OpenCode Go** | Needs [quick setup](#opencode-go-quick-setup) | State only (env vars or config file) | Remote API (dashboard scraping) |
+| **GitHub Copilot** | Usually | OpenCode auth or PAT | Remote API |
+| **OpenAI** | Yes | OpenCode auth | Remote API |
+| **Cursor** | Needs [quick setup](#cursor-quick-setup) | Companion auth | Local runtime accounting |
+| **Qwen Code** | Needs [quick setup](#qwen-code-quick-setup) | Companion auth | Local estimation |
+| **Alibaba Coding Plan** | Yes | OpenCode auth/global config/env | Local estimation |
+| **Firmware AI** | Usually | OpenCode auth/global config/env | Remote API |
+| **Chutes AI** | Usually | OpenCode auth/global config/env | Remote API |
+| **Google Antigravity** | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth | Remote API |
+| **Z.ai** | Yes | OpenCode auth/global config/env | Remote API |
+| **NanoGPT** | Usually | OpenCode auth/global config/env | Remote API |
+| **MiniMax Coding Plan** | Yes | OpenCode auth/global config/env | Remote API |
+| **OpenCode Go** | Needs [quick setup](#opencode-go-quick-setup) | Env/config auth | Dashboard scraping |
 
 <a id="anthropic-quick-setup"></a>
 <details>
@@ -342,12 +342,14 @@ See [Qwen Code quick setup](#qwen-code-quick-setup) for auth. Usage is local-onl
 <details>
 <summary><strong>Alibaba Coding Plan</strong></summary>
 
-Uses native OpenCode auth from `alibaba-coding-plan` or `alibaba` in `auth.json`. Quota is local request-count estimation with rolling windows.
+Alibaba Coding Plan uses trusted env vars or trusted user/global OpenCode config first, then native OpenCode auth from `alibaba-coding-plan` or `alibaba` in `auth.json`. Quota is local request-count estimation with rolling windows.
 
 - `lite`: `1200 / 5h`, `9000 / week`, `18000 / month`
 - `pro`: `6000 / 5h`, `45000 / week`, `90000 / month`
-- Auth is read from OpenCode `auth.json` only. There is no env-var or user/global `opencode.json` fallback for Alibaba Coding Plan.
-- If auth omits `tier`, the plugin uses `experimental.quotaToast.alibabaCodingPlanTier`, which defaults to `lite`.
+- API key sources are `ALIBABA_CODING_PLAN_API_KEY`, `ALIBABA_API_KEY`, trusted user/global `provider["alibaba-coding-plan"].options.apiKey` or `provider.alibaba.options.apiKey`, then `auth.json`.
+- Repo-local `opencode.json` / `opencode.jsonc` is ignored for Alibaba secrets.
+- Allowed env templates are limited to `{env:ALIBABA_CODING_PLAN_API_KEY}` and `{env:ALIBABA_API_KEY}`.
+- If auth fallback wins and omits `tier`, or if env/config wins, the plugin uses `experimental.quotaToast.alibabaCodingPlanTier`, which defaults to `lite`.
 - Counters increment on successful question-tool completions while the current model is `alibaba/*` or `alibaba-cn/*`.
 - State file: `.../opencode/opencode-quota/alibaba-coding-plan-local-quota.json`.
 - `/quota_status` shows auth detection, resolved tier, state-file path, and current 5h/weekly/monthly usage.
@@ -371,22 +373,13 @@ Example fallback tier:
 <details>
 <summary><strong>MiniMax Coding Plan</strong></summary>
 
-If OpenCode is already configured with the `minimax-coding-plan` provider and your `auth.json` has a `minimax-coding-plan` entry, quota detection works automatically. No additional plugin is required.
-
-The plugin reads `key` first and falls back to `access` from that auth entry. Quota is fetched from the MiniMax API using those stored credentials. There is no env-var or user/global `opencode.json` fallback for MiniMax Coding Plan auth.
-
-Example `auth.json` entry:
-
-```json
-{
-  "minimax-coding-plan": {
-    "type": "api",
-    "key": "YOUR_MINIMAX_API_KEY"
-  }
-}
-```
+MiniMax Coding Plan uses trusted env vars or trusted user/global OpenCode config first, then native OpenCode auth from `auth.json["minimax-coding-plan"]`. No additional plugin is required.
 
 - `MiniMax-M*` models — rolling 5-hour interval + weekly
+- API key sources are `MINIMAX_CODING_PLAN_API_KEY`, `MINIMAX_API_KEY`, trusted user/global `provider["minimax-coding-plan"].options.apiKey` or `provider.minimax.options.apiKey`, then `auth.json`.
+- Repo-local `opencode.json` / `opencode.jsonc` is ignored for MiniMax secrets.
+- Allowed env templates are limited to `{env:MINIMAX_CODING_PLAN_API_KEY}` and `{env:MINIMAX_API_KEY}`.
+- When `auth.json` fallback wins, the plugin reads `key` first and falls back to `access`.
 - `/quota_status` shows auth detection, API-key diagnostics, live quota state, and endpoint errors
 
 </details>
@@ -395,23 +388,13 @@ Example `auth.json` entry:
 <details>
 <summary><strong>Z.ai</strong></summary>
 
-If OpenCode is already configured with the `zai`, `glm`, or `zai-coding-plan` provider and your `auth.json` has a `zai-coding-plan` entry, quota detection works automatically.
+Z.ai uses trusted env vars or trusted user/global OpenCode config first, then native OpenCode auth from `auth.json["zai-coding-plan"]`.
 
-The plugin reads `auth.json["zai-coding-plan"]` only. There is no env-var or user/global `opencode.json` fallback for Z.ai auth.
-
-Example `auth.json` entry:
-
-```json
-{
-  "zai-coding-plan": {
-    "type": "api",
-    "key": "YOUR_ZAI_API_KEY"
-  }
-}
-```
-
+- API key sources are `ZAI_API_KEY`, `ZAI_CODING_PLAN_API_KEY`, trusted user/global `provider.zai.options.apiKey`, `provider["zai-coding-plan"].options.apiKey`, or `provider.glm.options.apiKey`, then `auth.json`.
+- Repo-local `opencode.json` / `opencode.jsonc` is ignored for Z.ai secrets.
+- Allowed env templates are limited to `{env:ZAI_API_KEY}` and `{env:ZAI_CODING_PLAN_API_KEY}`.
 - `/quota_status` shows auth diagnostics plus live 5-hour, weekly, and MCP quota windows when the Z.ai API reports them.
-- Malformed `zai-coding-plan` auth is surfaced as an auth error instead of being silently treated as missing.
+- Malformed `zai-coding-plan` fallback auth is surfaced as an auth error instead of being silently treated as missing.
 
 </details>
 

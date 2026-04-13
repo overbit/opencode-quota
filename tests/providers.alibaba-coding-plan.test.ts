@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   expectAttemptedWithErrorLabel,
@@ -11,18 +11,62 @@ vi.mock("../src/lib/opencode-auth.js", () => ({
   readAuthFileCached: vi.fn(),
 }));
 
+vi.mock("fs", () => ({
+  existsSync: vi.fn(() => false),
+}));
+
+vi.mock("fs/promises", () => ({
+  readFile: vi.fn(),
+}));
+
 vi.mock("../src/lib/qwen-local-quota.js", () => ({
   readAlibabaCodingPlanQuotaState: vi.fn(),
   computeAlibabaCodingPlanQuota: vi.fn(),
 }));
 
 describe("alibaba-coding-plan provider", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env = { ...originalEnv };
+    delete process.env.ALIBABA_CODING_PLAN_API_KEY;
+    delete process.env.ALIBABA_API_KEY;
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
   it("returns attempted:false when no alibaba coding plan is configured", async () => {
     const { readAuthFileCached } = await import("../src/lib/opencode-auth.js");
     (readAuthFileCached as any).mockResolvedValueOnce({});
 
     const out = await alibabaCodingPlanProvider.fetch({ config: {} } as any);
     expectNotAttempted(out);
+  });
+
+  it("uses env-based fallback auth with the configured fallback tier", async () => {
+    process.env.ALIBABA_API_KEY = "env-key";
+
+    const { computeAlibabaCodingPlanQuota, readAlibabaCodingPlanQuotaState } = await import(
+      "../src/lib/qwen-local-quota.js"
+    );
+
+    (readAlibabaCodingPlanQuotaState as any).mockResolvedValue({});
+    (computeAlibabaCodingPlanQuota as any).mockReturnValue({
+      tier: "pro",
+      fiveHour: { used: 0, limit: 6000, percentRemaining: 100 },
+      weekly: { used: 0, limit: 45000, percentRemaining: 100 },
+      monthly: { used: 0, limit: 90000, percentRemaining: 100 },
+    });
+
+    const out = await alibabaCodingPlanProvider.fetch({
+      config: { toastStyle: "grouped", alibabaCodingPlanTier: "pro" },
+    } as any);
+
+    expectAttemptedWithNoErrors(out);
+    expect(computeAlibabaCodingPlanQuota as any).toHaveBeenCalledWith({ state: {}, tier: "pro" });
   });
 
   it("supports the alibaba-coding-plan auth key and uses configured fallback tier", async () => {

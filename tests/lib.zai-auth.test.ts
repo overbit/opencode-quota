@@ -1,8 +1,33 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { homedir } from "os";
+import { join } from "path";
 
 const mocks = vi.hoisted(() => ({
   getAuthPaths: vi.fn(() => ["/tmp/auth.json"]),
   readAuthFileCached: vi.fn(),
+}));
+
+vi.mock("../src/lib/opencode-runtime-paths.js", () => ({
+  getOpencodeRuntimeDirCandidates: () => ({
+    dataDirs: [join(homedir(), ".local", "share", "opencode")],
+    configDirs: [join(homedir(), ".config", "opencode")],
+    cacheDirs: [join(homedir(), ".cache", "opencode")],
+    stateDirs: [join(homedir(), ".local", "state", "opencode")],
+  }),
+  getOpencodeRuntimeDirs: () => ({
+    dataDir: join(homedir(), ".local", "share", "opencode"),
+    configDir: join(homedir(), ".config", "opencode"),
+    cacheDir: join(homedir(), ".cache", "opencode"),
+    stateDir: join(homedir(), ".local", "state", "opencode"),
+  }),
+}));
+
+vi.mock("fs", () => ({
+  existsSync: vi.fn(),
+}));
+
+vi.mock("fs/promises", () => ({
+  readFile: vi.fn(),
 }));
 
 vi.mock("../src/lib/opencode-auth.js", () => ({
@@ -12,6 +37,7 @@ vi.mock("../src/lib/opencode-auth.js", () => ({
 
 import {
   DEFAULT_ZAI_AUTH_CACHE_MAX_AGE_MS,
+  getOpencodeConfigCandidatePaths,
   getZaiAuthDiagnostics,
   resolveZaiAuth,
   resolveZaiAuthCached,
@@ -22,8 +48,26 @@ const withZaiAuth = (entry: unknown) => ({
 });
 
 describe("zai auth resolution", () => {
-  beforeEach(() => {
+  const originalEnv = process.env;
+  const trustedJsonPath = join(homedir(), ".config", "opencode", "opencode.json");
+
+  beforeEach(async () => {
     vi.clearAllMocks();
+    process.env = { ...originalEnv };
+    delete process.env.ZAI_API_KEY;
+    delete process.env.ZAI_CODING_PLAN_API_KEY;
+
+    mocks.getAuthPaths.mockReset().mockReturnValue(["/tmp/auth.json"]);
+    mocks.readAuthFileCached.mockReset();
+
+    const { existsSync } = await import("fs");
+    const { readFile } = await import("fs/promises");
+    (existsSync as any).mockReset().mockReturnValue(false);
+    (readFile as any).mockReset();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   describe("resolveZaiAuth", () => {
@@ -66,9 +110,7 @@ describe("zai auth resolution", () => {
     });
 
     it("returns configured when a trimmed key is present", () => {
-      expect(
-        resolveZaiAuth(withZaiAuth({ type: "api", key: " zai-key " }) as any),
-      ).toEqual({
+      expect(resolveZaiAuth(withZaiAuth({ type: "api", key: " zai-key " }) as any)).toEqual({
         state: "configured",
         apiKey: "zai-key",
       });
@@ -76,7 +118,57 @@ describe("zai auth resolution", () => {
   });
 
   describe("resolveZaiAuthCached", () => {
-    it("uses cached auth reads", async () => {
+    it("prefers ZAI_API_KEY over invalid auth.json", async () => {
+      process.env.ZAI_API_KEY = "env-key";
+      mocks.readAuthFileCached.mockResolvedValueOnce(withZaiAuth({ type: "oauth", key: "token" }));
+
+      await expect(resolveZaiAuthCached()).resolves.toEqual({
+        state: "configured",
+        apiKey: "env-key",
+      });
+      expect(mocks.readAuthFileCached).not.toHaveBeenCalled();
+    });
+
+    it("reads from trusted global config aliases in provider-key order", async () => {
+      const { existsSync } = await import("fs");
+      const { readFile } = await import("fs/promises");
+
+      (existsSync as any).mockImplementation((path: string) => path === trustedJsonPath);
+      (readFile as any).mockResolvedValue(
+        JSON.stringify({
+          provider: {
+            zai: {
+              options: {
+                apiKey: "{env:NOT_ALLOWED}",
+              },
+            },
+            glm: {
+              options: {
+                apiKey: "glm-key",
+              },
+            },
+          },
+        }),
+      );
+
+      await expect(resolveZaiAuthCached()).resolves.toEqual({
+        state: "configured",
+        apiKey: "glm-key",
+      });
+      expect(mocks.readAuthFileCached).not.toHaveBeenCalled();
+    });
+
+    it("ignores workspace-local opencode.json when resolving provider secrets", async () => {
+      const { existsSync } = await import("fs");
+      const workspacePath = join(process.cwd(), "opencode.json");
+
+      (existsSync as any).mockImplementation((path: string) => path === workspacePath);
+      mocks.readAuthFileCached.mockResolvedValueOnce(null);
+
+      await expect(resolveZaiAuthCached()).resolves.toEqual({ state: "none" });
+    });
+
+    it("falls back to auth.json when env/config are not configured", async () => {
       mocks.readAuthFileCached.mockResolvedValueOnce(withZaiAuth({ type: "api", key: "zai-key" }));
 
       await expect(resolveZaiAuthCached()).resolves.toEqual({
@@ -85,6 +177,15 @@ describe("zai auth resolution", () => {
       });
       expect(mocks.readAuthFileCached).toHaveBeenCalledWith({
         maxAgeMs: DEFAULT_ZAI_AUTH_CACHE_MAX_AGE_MS,
+      });
+    });
+
+    it("surfaces invalid auth.json when the fallback entry wins", async () => {
+      mocks.readAuthFileCached.mockResolvedValueOnce(withZaiAuth({ type: "oauth", key: "token" }));
+
+      await expect(resolveZaiAuthCached()).resolves.toEqual({
+        state: "invalid",
+        error: 'Unsupported Z.ai auth type: "oauth"',
       });
     });
 
@@ -97,39 +198,37 @@ describe("zai auth resolution", () => {
   });
 
   describe("getZaiAuthDiagnostics", () => {
-    it("reports none with candidate auth paths", async () => {
-      mocks.readAuthFileCached.mockResolvedValueOnce({});
+    it("reports env/config checked paths separately from auth paths", async () => {
+      process.env.ZAI_CODING_PLAN_API_KEY = "diag-key";
 
       await expect(getZaiAuthDiagnostics()).resolves.toEqual({
-        state: "none",
-        source: null,
-        checkedPaths: ["/tmp/auth.json"],
+        state: "configured",
+        source: "env:ZAI_CODING_PLAN_API_KEY",
+        checkedPaths: ["env:ZAI_CODING_PLAN_API_KEY"],
+        authPaths: ["/tmp/auth.json"],
       });
     });
 
-    it("reports invalid auth.json diagnostics", async () => {
-      mocks.readAuthFileCached.mockResolvedValueOnce(
-        withZaiAuth({ type: "oauth", key: "token" }),
-      );
+    it("reports invalid auth.json diagnostics when fallback auth is malformed", async () => {
+      mocks.readAuthFileCached.mockResolvedValueOnce(withZaiAuth({ type: "oauth", key: "token" }));
 
       await expect(getZaiAuthDiagnostics()).resolves.toEqual({
         state: "invalid",
         source: "auth.json",
-        checkedPaths: ["/tmp/auth.json"],
+        checkedPaths: [],
+        authPaths: ["/tmp/auth.json"],
         error: 'Unsupported Z.ai auth type: "oauth"',
       });
     });
+  });
 
-    it("reports configured auth.json diagnostics", async () => {
-      mocks.readAuthFileCached.mockResolvedValueOnce(
-        withZaiAuth({ type: "api", key: "zai-key" }),
-      );
+  describe("getOpencodeConfigCandidatePaths", () => {
+    it("returns trusted global paths only", () => {
+      const paths = getOpencodeConfigCandidatePaths();
 
-      await expect(getZaiAuthDiagnostics()).resolves.toEqual({
-        state: "configured",
-        source: "auth.json",
-        checkedPaths: ["/tmp/auth.json"],
-      });
+      expect(paths).toHaveLength(2);
+      expect(paths[0].path).toBe(join(homedir(), ".config", "opencode", "opencode.jsonc"));
+      expect(paths[1].path).toBe(trustedJsonPath);
     });
   });
 });

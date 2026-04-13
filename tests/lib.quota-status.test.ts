@@ -63,16 +63,18 @@ const alibabaMocks = vi.hoisted(() => ({
   getAlibabaCodingPlanAuthDiagnostics: vi.fn(async () => ({
     state: "none" as const,
     source: null,
-    checkedPaths: ["/tmp/auth.json"],
+    checkedPaths: [],
+    authPaths: ["/tmp/auth.json"],
   })),
-  resolveAlibabaCodingPlanAuth: vi.fn(() => ({ state: "none" as const })),
+  resolveAlibabaCodingPlanAuthCached: vi.fn(async () => ({ state: "none" as const })),
 }));
 
 const minimaxMocks = vi.hoisted(() => ({
   getMiniMaxAuthDiagnostics: vi.fn(async () => ({
     state: "none" as const,
     source: null,
-    checkedPaths: ["/tmp/auth.json"],
+    checkedPaths: [],
+    authPaths: ["/tmp/auth.json"],
   })),
   resolveMiniMaxAuthCached: vi.fn(async () => ({ state: "none" as const })),
   queryMiniMaxQuota: vi.fn(async () => ({ success: true as const, entries: [] })),
@@ -82,7 +84,8 @@ const zaiMocks = vi.hoisted(() => ({
   getZaiAuthDiagnostics: vi.fn(async () => ({
     state: "none" as const,
     source: null,
-    checkedPaths: ["/tmp/auth.json"],
+    checkedPaths: [],
+    authPaths: ["/tmp/auth.json"],
   })),
   queryZaiQuota: vi.fn(async () => null),
 }));
@@ -219,7 +222,7 @@ vi.mock("../src/lib/openai.js", () => ({
 vi.mock("../src/lib/alibaba-auth.js", () => ({
   DEFAULT_ALIBABA_AUTH_CACHE_MAX_AGE_MS: 5_000,
   getAlibabaCodingPlanAuthDiagnostics: alibabaMocks.getAlibabaCodingPlanAuthDiagnostics,
-  resolveAlibabaCodingPlanAuth: alibabaMocks.resolveAlibabaCodingPlanAuth,
+  resolveAlibabaCodingPlanAuthCached: alibabaMocks.resolveAlibabaCodingPlanAuthCached,
 }));
 
 vi.mock("../src/lib/minimax-auth.js", () => ({
@@ -458,6 +461,9 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain("- qwen_oauth_source: (none)");
     expect(report).toContain("- qwen_local_plan: (none)");
     expect(report).toContain("- alibaba auth configured: false");
+    expect(report).toContain("- alibaba_api_key_source: (none)");
+    expect(report).toContain("- alibaba_api_key_checked_paths: (none)");
+    expect(report).toContain("- alibaba_api_key_auth_paths: /tmp/auth.json");
     expect(report).toContain("- alibaba coding plan fallback tier: lite");
     expect(report).toContain("- alibaba_coding_plan: (none)");
     expect(report).toContain("anthropic:");
@@ -481,6 +487,7 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain("zai:");
     expect(report).toContain("- auth_state: none");
     expect(report).toContain("- api_key_source: (none)");
+    expect(report).toContain("- api_key_checked_paths: (none)");
     expect(report).toContain("- api_key_auth_paths: /tmp/auth.json");
     expect(report).toContain("firmware:");
     expect(report).toContain("chutes:");
@@ -673,7 +680,8 @@ describe("buildQuotaStatusReport", () => {
     minimaxMocks.getMiniMaxAuthDiagnostics.mockResolvedValueOnce({
       state: "configured",
       source: "auth.json",
-      checkedPaths: ["/tmp/auth.json"],
+      checkedPaths: [],
+      authPaths: ["/tmp/auth.json"],
     });
     minimaxMocks.resolveMiniMaxAuthCached.mockResolvedValueOnce({
       state: "configured",
@@ -705,6 +713,7 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain("- auth_state: configured");
     expect(report).toContain("- api_key_configured: true");
     expect(report).toContain("- api_key_source: auth.json");
+    expect(report).toContain("- api_key_checked_paths: (none)");
     expect(report).toContain("- api_key_auth_paths: /tmp/auth.json");
     expect(report).toContain(
       "- five_hour_usage: 70/4500 percent_remaining=98 reset_at=2026-03-25T18:00:00.000Z",
@@ -720,7 +729,8 @@ describe("buildQuotaStatusReport", () => {
     minimaxMocks.getMiniMaxAuthDiagnostics.mockResolvedValueOnce({
       state: "invalid",
       source: "auth.json",
-      checkedPaths: ["/tmp/auth.json"],
+      checkedPaths: [],
+      authPaths: ["/tmp/auth.json"],
       error: 'Unsupported MiniMax auth type: "oauth"',
     });
 
@@ -730,6 +740,7 @@ describe("buildQuotaStatusReport", () => {
     expect(invalidReport).toContain("- auth_state: invalid");
     expect(invalidReport).toContain("- api_key_configured: false");
     expect(invalidReport).toContain("- api_key_source: auth.json");
+    expect(invalidReport).toContain("- api_key_checked_paths: (none)");
     expect(invalidReport).toContain("- api_key_auth_paths: /tmp/auth.json");
     expect(invalidReport).toContain('- auth_error: Unsupported MiniMax auth type: "oauth"');
     expect(minimaxMocks.resolveMiniMaxAuthCached).not.toHaveBeenCalled();
@@ -740,7 +751,8 @@ describe("buildQuotaStatusReport", () => {
     minimaxMocks.getMiniMaxAuthDiagnostics.mockResolvedValueOnce({
       state: "configured",
       source: "auth.json",
-      checkedPaths: ["/tmp/auth.json"],
+      checkedPaths: [],
+      authPaths: ["/tmp/auth.json"],
     });
     minimaxMocks.resolveMiniMaxAuthCached.mockResolvedValueOnce({
       state: "configured",
@@ -760,7 +772,8 @@ describe("buildQuotaStatusReport", () => {
     zaiMocks.getZaiAuthDiagnostics.mockResolvedValueOnce({
       state: "configured",
       source: "auth.json",
-      checkedPaths: ["/tmp/auth.json"],
+      checkedPaths: [],
+      authPaths: ["/tmp/auth.json"],
     });
     zaiMocks.queryZaiQuota.mockResolvedValueOnce({
       success: true,
@@ -778,6 +791,7 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain("- auth_state: configured");
     expect(report).toContain("- api_key_configured: true");
     expect(report).toContain("- api_key_source: auth.json");
+    expect(report).toContain("- api_key_checked_paths: (none)");
     expect(report).toContain("- api_key_auth_paths: /tmp/auth.json");
     expect(report).toContain("- five_hour_remaining: 67% reset_at=2026-03-25T18:00:00.000Z");
     expect(report).toContain("- weekly_remaining: 44% reset_at=2026-04-01T00:00:00.000Z");
@@ -788,7 +802,8 @@ describe("buildQuotaStatusReport", () => {
     zaiMocks.getZaiAuthDiagnostics.mockResolvedValueOnce({
       state: "invalid",
       source: "auth.json",
-      checkedPaths: ["/tmp/auth.json"],
+      checkedPaths: [],
+      authPaths: ["/tmp/auth.json"],
       error: 'Unsupported Z.ai auth type: "oauth"',
     });
 
@@ -798,6 +813,7 @@ describe("buildQuotaStatusReport", () => {
     expect(report).toContain("- auth_state: invalid");
     expect(report).toContain("- api_key_configured: false");
     expect(report).toContain("- api_key_source: auth.json");
+    expect(report).toContain("- api_key_checked_paths: (none)");
     expect(report).toContain("- api_key_auth_paths: /tmp/auth.json");
     expect(report).toContain('- auth_error: Unsupported Z.ai auth type: "oauth"');
     expect(zaiMocks.queryZaiQuota).not.toHaveBeenCalled();
@@ -807,7 +823,8 @@ describe("buildQuotaStatusReport", () => {
     zaiMocks.getZaiAuthDiagnostics.mockResolvedValueOnce({
       state: "configured",
       source: "auth.json",
-      checkedPaths: ["/tmp/auth.json"],
+      checkedPaths: [],
+      authPaths: ["/tmp/auth.json"],
     });
     zaiMocks.queryZaiQuota.mockResolvedValueOnce({
       success: false,
