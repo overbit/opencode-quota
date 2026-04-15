@@ -83,7 +83,7 @@ describe("plugin command handled boundary", () => {
     expect(client.session.prompt).toHaveBeenCalledTimes(1);
   });
 
-  it("rethrows non-sentinel errors", async () => {
+  it("downgrades availability probe errors into handled unavailable output", async () => {
     mocks.getProviders.mockReturnValue([
       {
         id: "boom-provider",
@@ -91,15 +91,21 @@ describe("plugin command handled boundary", () => {
         fetch: vi.fn(),
       },
     ]);
+    const client = createClient();
     const { QuotaToastPlugin } = await import("../src/plugin.js");
-    const hooks = await QuotaToastPlugin({ client: createClient() } as any);
+    const hooks = await QuotaToastPlugin({ client } as any);
 
     await expect(
       hooks["command.execute.before"]?.({
         command: "quota",
         sessionID: "session-2",
       } as any),
-    ).rejects.toThrow("boom");
+    ).rejects.toThrow(COMMAND_HANDLED_SENTINEL);
+
+    expect(client.session.prompt).toHaveBeenCalledTimes(1);
+    const injected = client.session.prompt.mock.calls[0]?.[0]?.body?.parts?.[0]?.text ?? "";
+    expect(injected).toContain("Quota unavailable");
+    expect(injected).toContain("No quota providers detected");
   });
 
   it("treats handled token slash commands as strict no-op when disabled", async () => {

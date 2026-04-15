@@ -23,7 +23,7 @@ export interface QuotaToastConfig {
   /** If false, never show popup toasts (commands/tools still work). */
   enableToast: boolean;
 
-  /** Toast formatting style. */
+  /** Shared quota-row formatting style for popup toasts and the TUI sidebar. */
   toastStyle: "classic" | "grouped";
   minIntervalMs: number;
 
@@ -66,12 +66,15 @@ export interface QuotaToastConfig {
   /** If true, only show quota for current model */
   onlyCurrentModel: boolean;
 
-  /** If true, show per-model input/output token counts for current session */
+  /**
+   * If true, show the Session input/output tokens section in quota displays when session token data is available.
+   * Toasts and /quota keep per-model rows; the TUI sidebar uses a one-line total summary.
+   */
   showSessionTokens: boolean;
 
-  /** Responsive layout breakpoints */
+  /** Responsive toast layout breakpoints (not used by the fixed-width TUI sidebar). */
   layout: {
-    /** Default max width target for formatting */
+    /** Default max width target for toast formatting */
     maxWidth: number;
     /** If toast max width is <= this, use compact layout */
     narrowAt: number;

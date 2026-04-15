@@ -1,7 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+
+const runtimeDirs = vi.hoisted(() => ({
+  value: {
+    dataDirs: [] as string[],
+    configDirs: [] as string[],
+    cacheDirs: [] as string[],
+    stateDirs: [] as string[],
+  },
+}));
+
+vi.mock("../src/lib/opencode-runtime-paths.js", () => ({
+  getOpencodeRuntimeDirCandidates: () => runtimeDirs.value,
+}));
 
 import { loadConfig } from "../src/lib/config.js";
 
@@ -19,6 +32,13 @@ describe("loadConfig security precedence", () => {
 
     mkdirSync(workspaceDir, { recursive: true });
     mkdirSync(join(xdgConfigHome, "opencode"), { recursive: true });
+
+    runtimeDirs.value = {
+      dataDirs: [join(tempDir, "xdg-data", "opencode")],
+      configDirs: [join(xdgConfigHome, "opencode")],
+      cacheDirs: [join(tempDir, "xdg-cache", "opencode")],
+      stateDirs: [join(tempDir, "xdg-state", "opencode")],
+    };
 
     process.env = {
       ...originalEnv,
@@ -104,7 +124,7 @@ describe("loadConfig security precedence", () => {
     expect(cfg.onlyCurrentModel).toBe(true);
   });
 
-  it("supports file-only loading with an explicit cwd override", async () => {
+  it("supports file loading with an explicit cwd override", async () => {
     const altWorkspaceDir = join(tempDir, "alt-workspace");
     mkdirSync(altWorkspaceDir, { recursive: true });
 

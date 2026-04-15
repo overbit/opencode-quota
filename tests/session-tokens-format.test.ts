@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { renderSessionTokensLines, WIDE_SESSION_TOKEN_LINE_WIDTH } from "../src/lib/session-tokens-format.js";
+import {
+  renderSessionTokensLines,
+  renderSidebarSessionTokenSummaryLines,
+  SESSION_TOKEN_SECTION_HEADING,
+  WIDE_SESSION_TOKEN_LINE_WIDTH,
+} from "../src/lib/session-tokens-format.js";
 
 describe("renderSessionTokensLines", () => {
   it("keeps the existing wide row layout when width allows it", () => {
@@ -11,7 +16,7 @@ describe("renderSessionTokensLines", () => {
     });
 
     expect(lines).toEqual([
-      "Session Tokens",
+      SESSION_TOKEN_SECTION_HEADING,
       "  openai/gpt-5            1.2K in     567 out",
     ]);
     expect(lines[1]?.length).toBe(WIDE_SESSION_TOKEN_LINE_WIDTH);
@@ -28,6 +33,26 @@ describe("renderSessionTokensLines", () => {
     );
 
     expect(lines.every((line) => line.length <= 36)).toBe(true);
-    expect(lines).toEqual(["Session Tokens", "  openai/gpt-5.4-mini", "    372 in  41 out"]);
+    expect(lines).toEqual([
+      SESSION_TOKEN_SECTION_HEADING.slice(0, 36),
+      "  openai/gpt-5.4-mini",
+      "    372 in  41 out",
+    ]);
+  });
+});
+
+describe("renderSidebarSessionTokenSummaryLines", () => {
+  it("renders a one-line aggregate sidebar summary under the shared heading", () => {
+    const lines = renderSidebarSessionTokenSummaryLines(
+      {
+        models: [{ modelID: "openai/gpt-5.4-mini", input: 372, output: 41 }],
+        totalInput: 372,
+        totalOutput: 41,
+      },
+      { maxWidth: 36 },
+    );
+
+    expect(lines).toEqual([SESSION_TOKEN_SECTION_HEADING.slice(0, 36), "  372 in  41 out"]);
+    expect(lines.every((line) => line.length <= 36)).toBe(true);
   });
 });

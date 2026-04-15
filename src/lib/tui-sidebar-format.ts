@@ -3,6 +3,7 @@ import type { QuotaToastConfig } from "./types.js";
 
 import { sanitizeQuotaRenderData } from "./display-sanitize.js";
 import { formatQuotaRows } from "./format.js";
+import { renderSidebarSessionTokenSummaryLines } from "./session-tokens-format.js";
 
 export const TUI_SIDEBAR_MAX_WIDTH = 36;
 export const TUI_SIDEBAR_LAYOUT = {
@@ -17,14 +18,22 @@ export function buildSidebarQuotaPanelLines(params: {
 }): string[] {
   const data = sanitizeQuotaRenderData(params.data);
 
-  const formatted = formatQuotaRows({
+  const quotaBody = formatQuotaRows({
     version: "1.0.0",
     layout: TUI_SIDEBAR_LAYOUT,
     entries: data.entries,
     errors: data.errors,
     style: params.config.toastStyle,
-    sessionTokens: data.sessionTokens,
+    sessionTokens: undefined,
+  });
+  const quotaLines = quotaBody ? quotaBody.split("\n") : [];
+  const tokenLines = renderSidebarSessionTokenSummaryLines(data.sessionTokens, {
+    maxWidth: TUI_SIDEBAR_MAX_WIDTH,
   });
 
-  return formatted ? formatted.split("\n") : [];
+  if (quotaLines.length > 0 && tokenLines.length > 0) {
+    return [...quotaLines, "", ...tokenLines];
+  }
+
+  return quotaLines.length > 0 ? quotaLines : tokenLines;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formatQuotaRows } from "../src/lib/format.js";
+import { SESSION_TOKEN_SECTION_HEADING } from "../src/lib/session-tokens-format.js";
 import {
   buildSidebarQuotaPanelLines,
   TUI_SIDEBAR_LAYOUT,
@@ -51,8 +52,9 @@ describe("buildSidebarQuotaPanelLines", () => {
     expect(rendered).not.toContain("\u0002");
     expect(rendered).not.toContain("\u0003");
     expect(rendered).toContain("Err: Bad");
-    expect(rendered).toContain("Session Tokens");
-    expect(rendered).toContain("gpt-5");
+    expect(rendered).toContain(SESSION_TOKEN_SECTION_HEADING);
+    expect(rendered).toContain("12 in  34 out");
+    expect(rendered).not.toContain("gpt-5");
   });
 
   it("uses the fixed sidebar layout instead of toast layout settings", () => {
@@ -86,7 +88,44 @@ describe("buildSidebarQuotaPanelLines", () => {
     ).toEqual(expected);
   });
 
-  it("renders sidebar session tokens in a compact width-safe format", () => {
+  it("renders grouped sidebar output via the shared grouped formatter", () => {
+    const data = {
+      entries: [
+        {
+          name: "Copilot",
+          group: "Copilot (business)",
+          label: "Usage:",
+          kind: "value" as const,
+          value: "9 used | 2026-01 | org=acme-corp",
+          resetTimeIso: "2099-01-01T00:00:00.000Z",
+        },
+      ],
+      errors: [],
+      sessionTokens: undefined,
+    };
+    const expected = formatQuotaRows({
+      version: "1.0.0",
+      layout: TUI_SIDEBAR_LAYOUT,
+      entries: data.entries,
+      errors: data.errors,
+      style: "grouped",
+      sessionTokens: data.sessionTokens,
+    }).split("\n");
+
+    const lines = buildSidebarQuotaPanelLines({
+      data,
+      config: {
+        toastStyle: "grouped",
+      },
+    });
+
+    expect(lines).toEqual(expected);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("→ [Copilot] (business)");
+    expect(lines.every((line) => line.length <= TUI_SIDEBAR_MAX_WIDTH)).toBe(true);
+  });
+
+  it("renders sidebar session tokens as a standalone one-line summary", () => {
     const lines = buildSidebarQuotaPanelLines({
       config: {
         toastStyle: "classic",
@@ -109,8 +148,6 @@ describe("buildSidebarQuotaPanelLines", () => {
     });
 
     expect(lines.every((line) => line.length <= TUI_SIDEBAR_MAX_WIDTH)).toBe(true);
-    expect(lines).toContain("Session Tokens");
-    expect(lines.join("\n")).toContain("372 in");
-    expect(lines.join("\n")).toContain("41 out");
+    expect(lines).toEqual([SESSION_TOKEN_SECTION_HEADING, "  372 in  41 out"]);
   });
 });

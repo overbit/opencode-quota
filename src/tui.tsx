@@ -5,6 +5,7 @@ import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { ProviderFetchCacheStore } from "./lib/quota-render-data.js";
 import type { SidebarPanelState } from "./lib/tui-runtime.js";
 
+import { getSidebarBodyLineColor } from "./lib/tui-line-style.js";
 import { loadSidebarPanel } from "./lib/tui-runtime.js";
 
 const id = "@slkiser/opencode-quota";
@@ -115,7 +116,7 @@ function SidebarContentView(props: {
       </text>
       <box gap={0}>
         {lines().map((line) => (
-          <text fg={props.api.theme.current.textMuted} wrapMode="none">
+          <text fg={getSidebarBodyLineColor(line, props.api.theme.current)} wrapMode="none">
             {line || " "}
           </text>
         ))}

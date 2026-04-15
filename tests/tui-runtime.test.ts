@@ -173,6 +173,70 @@ describe("tui runtime helpers", () => {
     expect(buildSidebarQuotaPanelLines).toHaveBeenCalledOnce();
   });
 
+  it("preserves grouped toastStyle through sidebar runtime collection and formatting", async () => {
+    writeFileSync(
+      join(worktreeDir, "opencode.json"),
+      JSON.stringify({
+        experimental: {
+          quotaToast: {
+            enabled: true,
+            toastStyle: "grouped",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const data = {
+      entries: [
+        {
+          name: "Copilot",
+          group: "Copilot (business)",
+          label: "Usage:",
+          kind: "value",
+          value: "9 used | 2026-01 | org=acme-corp",
+          resetTimeIso: "2026-01-16T00:00:00.000Z",
+        },
+      ],
+      errors: [],
+      sessionTokens: undefined,
+    };
+
+    collectQuotaRenderData.mockResolvedValue({ data });
+    buildSidebarQuotaPanelLines.mockReturnValue(["→ [Copilot] (business)"]);
+
+    const panel = await loadSidebarPanel({
+      api: {
+        state: {
+          provider: [],
+          path: {
+            worktree: worktreeDir,
+            directory: nestedDir,
+          },
+          session: {
+            messages: () => [],
+          },
+        },
+        client: {},
+      } as any,
+      sessionID: "session-grouped",
+      providerFetchCache: new Map(),
+    });
+
+    expect(panel).toEqual({ enabled: true, lines: ["→ [Copilot] (business)"] });
+    expect(collectQuotaRenderData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        style: "grouped",
+      }),
+    );
+    expect(buildSidebarQuotaPanelLines).toHaveBeenCalledWith({
+      data,
+      config: expect.objectContaining({
+        toastStyle: "grouped",
+      }),
+    });
+  });
+
   it("prefers api.client.config.providers over sidebar state providers", async () => {
     writeFileSync(
       join(worktreeDir, "opencode.json"),

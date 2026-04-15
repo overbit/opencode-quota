@@ -46,7 +46,7 @@ Add the plugin to `opencode.json` or `opencode.jsonc`:
 }
 ```
 
-If you also want the sidebar, add the same package to `tui.json` or `tui.jsonc` in the same folder:
+If you also want the sidebar, add the same package to a `tui.json` or `tui.jsonc` file that OpenCode loads (commonly the same folder):
 
 ```jsonc
 {
@@ -63,7 +63,9 @@ That is enough for most installs. Providers are auto-detected from your existing
 
 `experimental.quotaToast.enableToast: false` disables pop-up toasts only. The sidebar panel still renders when the TUI plugin is installed and quota data is available.
 
-The sidebar uses its own fixed compact layout. `experimental.quotaToast.layout.*` affects toast formatting only, not the TUI sidebar.
+The sidebar uses its own fixed compact layout, but it still honors `experimental.quotaToast.toastStyle`. `classic` and `grouped` both work in the sidebar; `experimental.quotaToast.layout.*` affects toast formatting only, not the TUI sidebar.
+
+When `experimental.quotaToast.showSessionTokens` is enabled and session token data is available, the shared section is labeled `Session input/output tokens`. Toasts and `/quota` keep per-model input/output rows, while the TUI sidebar renders the same section as a one-line total summary so it fits the fixed-width panel.
 
 <details>
 <summary><strong>Example: Turn off auto-detection and choose providers</strong></summary>
@@ -81,7 +83,7 @@ The sidebar uses its own fixed compact layout. `experimental.quotaToast.layout.*
 </details>
 
 <details>
-<summary><strong>Example: Grouped toast layout instead of the default classic toast</strong></summary>
+<summary><strong>Example: Grouped quota layout instead of the default classic layout</strong></summary>
 
 ```jsonc
 {
@@ -538,36 +540,62 @@ OpenCode Go quota scrapes the OpenCode Go dashboard at `https://opencode.ai/work
 
 ## Configuration Reference
 
-All plugin settings live under `experimental.quotaToast`.
+All quota plugin settings live under `experimental.quotaToast` in `opencode.json(c)`. The one TUI-specific install step is separate: add the package to `tui.json(c)` when you want the `Quota` sidebar panel.
 
 Workspace-local config can still customize display/report behavior, but user/global config is authoritative for network-affecting settings such as `enabled`, `enabledProviders`, `minIntervalMs`, `pricingSnapshot`, `showOnIdle`, `showOnQuestion`, and `showOnCompact`.
 
+### Core/shared settings
+
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `true` | Master switch for the plugin. When `false`, `/quota`, `/quota_status`, `/pricing_refresh`, and `/tokens_*` are no-ops. |
-| `enableToast` | `true` | Show popup toasts |
-| `toastStyle` | `classic` | Toast layout: `classic` or `grouped` |
-| `enabledProviders` | `"auto"` | Auto-detect providers, or set an explicit provider list |
-| `anthropicBinaryPath` | `"claude"` | Command/path used for local Claude CLI probing; override this for custom installs or shim locations |
-| `minIntervalMs` | `300000` | Minimum fetch interval between provider updates |
-| `toastDurationMs` | `9000` | Toast duration in milliseconds |
-| `showOnIdle` | `true` | Show toast on idle trigger |
-| `showOnQuestion` | `true` | Show toast after a question/assistant response |
-| `showOnCompact` | `true` | Show toast after session compaction |
-| `showOnBothFail` | `true` | Show a fallback toast when providers attempt and all fail |
-| `onlyCurrentModel` | `false` | Filter to the current model when possible |
-| `showSessionTokens` | `true` | Append current-session token totals to toast output |
-| `layout.maxWidth` | `50` | Main formatting width target |
-| `layout.narrowAt` | `42` | Compact layout breakpoint |
-| `layout.tinyAt` | `32` | Tiny layout breakpoint |
-| `googleModels` | `["CLAUDE"]` | Google model keys: `CLAUDE`, `G3PRO`, `G3FLASH`, `G3IMAGE` |
-| `alibabaCodingPlanTier` | `"lite"` | Fallback Alibaba Coding Plan tier when auth does not include `tier` |
-| `cursorPlan` | `"none"` | Cursor included API budget preset: `none`, `pro`, `pro-plus`, `ultra` |
-| `cursorIncludedApiUsd` | unset | Override Cursor monthly included API budget in USD |
-| `cursorBillingCycleStartDay` | unset | Local billing-cycle anchor day `1..28`; when unset, Cursor usage resets on the local calendar month |
-| `pricingSnapshot.source` | `"auto"` | Token pricing snapshot selection: `auto`, `bundled`, or `runtime` |
-| `pricingSnapshot.autoRefresh` | `5` | Refresh stale local pricing data after this many days |
-| `debug` | `false` | Include debug context in toast output |
+| `enabled` | `true` | Master switch for quota collection and handled slash commands. When `false`, `/quota`, `/quota_status`, `/pricing_refresh`, and `/tokens_*` are handled as no-ops. |
+| `enabledProviders` | `"auto"` | Auto-detect providers, or set an explicit provider list. |
+| `minIntervalMs` | `300000` | Minimum fetch interval between provider updates. |
+| `toastStyle` | `classic` | Shared quota-row style for popup toasts and the TUI sidebar: `classic` or `grouped`. |
+| `onlyCurrentModel` | `false` | Filter quota rows to the current model/provider when that session selection can be resolved. |
+| `showSessionTokens` | `true` | Show the `Session input/output tokens` section in quota displays when session token data is available. Toasts and `/quota` show per-model input/output rows; the TUI sidebar shows a one-line total summary. |
+| `pricingSnapshot.source` | `"auto"` | Token pricing snapshot selection for `/tokens_*`: `auto`, `bundled`, or `runtime`. |
+| `pricingSnapshot.autoRefresh` | `5` | Refresh stale local pricing data after this many days. |
+
+### Toast settings
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `enableToast` | `true` | Show popup toasts. Disabling this does not disable `/quota` or the TUI sidebar. |
+| `toastDurationMs` | `9000` | Toast duration in milliseconds. |
+| `showOnIdle` | `true` | Show a toast on the idle trigger. |
+| `showOnQuestion` | `true` | Show a toast after a question/assistant response. |
+| `showOnCompact` | `true` | Show a toast after session compaction. |
+| `showOnBothFail` | `true` | Show a fallback toast when providers attempted quota reads and all failed. |
+| `layout.maxWidth` | `50` | Toast formatting width target. Ignored by the TUI sidebar. |
+| `layout.narrowAt` | `42` | Toast compact-layout breakpoint. Ignored by the TUI sidebar. |
+| `layout.tinyAt` | `32` | Toast tiny-layout breakpoint. Ignored by the TUI sidebar. |
+| `debug` | `false` | Append toast debug context when troubleshooting. |
+
+### TUI sidebar settings and notes
+
+There are no separate TUI-only width/style knobs under `experimental.quotaToast`. The sidebar reuses the shared quota pipeline plus the TUI plugin install entry in `tui.json(c)`.
+
+| Setting / location | Default | Sidebar behavior |
+| --- | --- | --- |
+| `tui.json(c).plugin` | unset | Add `@slkiser/opencode-quota` here to install the `Quota` sidebar panel. |
+| `experimental.quotaToast.enabled` | `true` | Shared master switch. When `false`, the sidebar panel stops collecting quota data and does not render quota rows. |
+| `experimental.quotaToast.toastStyle` | `classic` | The sidebar honors both `classic` and `grouped` quota-row formatting. |
+| `experimental.quotaToast.onlyCurrentModel` | `false` | Filters sidebar quota rows to the current session model/provider when available. |
+| `experimental.quotaToast.showSessionTokens` | `true` | Adds the `Session input/output tokens` heading plus a one-line total input/output summary in the sidebar when session token data is available. |
+| `experimental.quotaToast.enableToast` | `true` | Toast-only switch. Turning it off does not disable the sidebar panel. |
+| `experimental.quotaToast.layout.*` | `50 / 42 / 32` | Ignored by the sidebar. The sidebar uses its own fixed compact width. |
+
+### Provider-specific settings
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `anthropicBinaryPath` | `"claude"` | Command/path used for local Claude CLI probing; override this for custom installs or shim locations. |
+| `googleModels` | `["CLAUDE"]` | Google model keys to query: `CLAUDE`, `G3PRO`, `G3FLASH`, `G3IMAGE`. |
+| `alibabaCodingPlanTier` | `"lite"` | Fallback Alibaba Coding Plan tier when auth does not include `tier`. |
+| `cursorPlan` | `"none"` | Cursor included API budget preset: `none`, `pro`, `pro-plus`, `ultra`. |
+| `cursorIncludedApiUsd` | unset | Override Cursor monthly included API budget in USD. |
+| `cursorBillingCycleStartDay` | unset | Local billing-cycle anchor day `1..28`; when unset, Cursor usage resets on the local calendar month. |
 
 ## Token Pricing Snapshot
 

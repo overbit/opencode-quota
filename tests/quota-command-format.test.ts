@@ -77,7 +77,7 @@ describe("formatQuotaCommand", () => {
       → [Google Antigravity] (acct)
         Claude:          ████████████░░░░░░  67% left (resets in 3h)
 
-      Session Tokens
+      Session input/output tokens
         openai/gpt-5            1.2K in     567 out
         github-copilot/clau…     987 in     654 out
 
