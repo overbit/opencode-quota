@@ -9,7 +9,7 @@
 `opencode-quota` gives you three things:
 
 - Automatic quota toasts after assistant responses
-- A TUI sidebar quota panel that reuses the same quota/session-token text pipeline
+- A TUI sidebar quota panel that reuses the same quota/session-token data pipeline with a fixed compact sidebar renderer
 - Manual `/quota`, `/pricing_refresh`, and `/tokens_*` commands for deeper local reporting with zero context window pollution
 
 **Quota providers**: Anthropic (Claude), GitHub Copilot, OpenAI (Plus/Pro), Cursor, Qwen Code, Alibaba Coding Plan, MiniMax Coding Plan, Chutes AI, Firmware AI, Google Antigravity, Z.ai Coding Plan, NanoGPT, and OpenCode Go.
@@ -62,6 +62,8 @@ Then restart OpenCode, run `/quota_status`, run `/quota`, and open the session s
 That is enough for most installs. Providers are auto-detected from your existing OpenCode setup, and most providers work from your existing OpenCode auth. If you want both pop-up toasts and the sidebar, list the package in both files. If a provider needs anything extra, use the setup table below.
 
 `experimental.quotaToast.enableToast: false` disables pop-up toasts only. The sidebar panel still renders when the TUI plugin is installed and quota data is available.
+
+The sidebar uses its own fixed compact layout. `experimental.quotaToast.layout.*` affects toast formatting only, not the TUI sidebar.
 
 <details>
 <summary><strong>Example: Turn off auto-detection and choose providers</strong></summary>

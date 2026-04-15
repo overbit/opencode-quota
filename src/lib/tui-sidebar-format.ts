@@ -5,23 +5,21 @@ import { sanitizeQuotaRenderData } from "./display-sanitize.js";
 import { formatQuotaRows } from "./format.js";
 
 export const TUI_SIDEBAR_MAX_WIDTH = 36;
+export const TUI_SIDEBAR_LAYOUT = {
+  maxWidth: TUI_SIDEBAR_MAX_WIDTH,
+  narrowAt: TUI_SIDEBAR_MAX_WIDTH,
+  tinyAt: 20,
+} as const;
 
 export function buildSidebarQuotaPanelLines(params: {
   data: QuotaRenderData;
-  config: Pick<QuotaToastConfig, "toastStyle" | "layout">;
+  config: Pick<QuotaToastConfig, "toastStyle">;
 }): string[] {
   const data = sanitizeQuotaRenderData(params.data);
-  const maxWidth = Math.max(1, Math.min(params.config.layout.maxWidth, TUI_SIDEBAR_MAX_WIDTH));
-  const narrowAt = Math.max(1, Math.min(params.config.layout.narrowAt, maxWidth));
-  const tinyAt = Math.max(1, Math.min(params.config.layout.tinyAt, narrowAt));
 
   const formatted = formatQuotaRows({
     version: "1.0.0",
-    layout: {
-      maxWidth,
-      narrowAt,
-      tinyAt,
-    },
+    layout: TUI_SIDEBAR_LAYOUT,
     entries: data.entries,
     errors: data.errors,
     style: params.config.toastStyle,

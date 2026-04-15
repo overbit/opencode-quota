@@ -132,7 +132,7 @@ export function formatQuotaRowsGrouped(params: {
   }
 
   // Add session token summary (if data available and non-empty)
-  const tokenLines = renderSessionTokensLines(params.sessionTokens);
+  const tokenLines = renderSessionTokensLines(params.sessionTokens, { maxWidth });
   if (tokenLines.length > 0) {
     if (lines.length > 0) lines.push("");
     lines.push(...tokenLines);

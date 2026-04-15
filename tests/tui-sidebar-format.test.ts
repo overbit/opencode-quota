@@ -1,18 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { formatQuotaRows } from "../src/lib/format.js";
-import { buildSidebarQuotaPanelLines, TUI_SIDEBAR_MAX_WIDTH } from "../src/lib/tui-sidebar-format.js";
+import {
+  buildSidebarQuotaPanelLines,
+  TUI_SIDEBAR_LAYOUT,
+  TUI_SIDEBAR_MAX_WIDTH,
+} from "../src/lib/tui-sidebar-format.js";
 
 describe("buildSidebarQuotaPanelLines", () => {
   it("sanitizes structured entry, error, and session-token text before rendering", () => {
     const lines = buildSidebarQuotaPanelLines({
       config: {
         toastStyle: "grouped",
-        layout: {
-          maxWidth: 80,
-          narrowAt: 50,
-          tinyAt: 32,
-        },
       },
       data: {
         entries: [
@@ -56,7 +55,7 @@ describe("buildSidebarQuotaPanelLines", () => {
     expect(rendered).toContain("gpt-5");
   });
 
-  it("uses the existing formatter with sidebar width clamping", () => {
+  it("uses the fixed sidebar layout instead of toast layout settings", () => {
     const data = {
       entries: [
         {
@@ -70,11 +69,7 @@ describe("buildSidebarQuotaPanelLines", () => {
     };
     const expected = formatQuotaRows({
       version: "1.0.0",
-      layout: {
-        maxWidth: TUI_SIDEBAR_MAX_WIDTH,
-        narrowAt: TUI_SIDEBAR_MAX_WIDTH,
-        tinyAt: 20,
-      },
+      layout: TUI_SIDEBAR_LAYOUT,
       entries: data.entries,
       errors: data.errors,
       style: "classic",
@@ -86,13 +81,36 @@ describe("buildSidebarQuotaPanelLines", () => {
         data,
         config: {
           toastStyle: "classic",
-          layout: {
-            maxWidth: 120,
-            narrowAt: 60,
-            tinyAt: 20,
-          },
         },
       }),
     ).toEqual(expected);
+  });
+
+  it("renders sidebar session tokens in a compact width-safe format", () => {
+    const lines = buildSidebarQuotaPanelLines({
+      config: {
+        toastStyle: "classic",
+      },
+      data: {
+        entries: [],
+        errors: [],
+        sessionTokens: {
+          totalInput: 372,
+          totalOutput: 41,
+          models: [
+            {
+              modelID: "openai/gpt-5.4-mini",
+              input: 372,
+              output: 41,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(lines.every((line) => line.length <= TUI_SIDEBAR_MAX_WIDTH)).toBe(true);
+    expect(lines).toContain("Session Tokens");
+    expect(lines.join("\n")).toContain("372 in");
+    expect(lines.join("\n")).toContain("41 out");
   });
 });
