@@ -13,6 +13,12 @@ describe("getSidebarBodyLineColor", () => {
     expect(getSidebarBodyLineColor(SESSION_TOKEN_SECTION_HEADING, theme)).toBe("white");
   });
 
+  it("keeps the heading highlighted when the rendered sidebar heading is width-clamped", () => {
+    expect(getSidebarBodyLineColor(SESSION_TOKEN_SECTION_HEADING.slice(0, 18), theme)).toBe(
+      "white",
+    );
+  });
+
   it("keeps non-heading sidebar lines muted", () => {
     expect(getSidebarBodyLineColor("Unavailable", theme)).toBe("gray");
   });

@@ -579,7 +579,7 @@ There are no separate TUI-only width/style knobs under `experimental.quotaToast`
 | Setting / location | Default | Sidebar behavior |
 | --- | --- | --- |
 | `tui.json(c).plugin` | unset | Add `@slkiser/opencode-quota` here to install the `Quota` sidebar panel. |
-| `experimental.quotaToast.enabled` | `true` | Shared master switch. When `false`, the sidebar panel stops collecting quota data and does not render quota rows. |
+| `experimental.quotaToast.enabled` | `true` | Shared master switch. When `false`, the sidebar panel stops collecting quota data and hides its quota content instead of showing stale/loading rows. |
 | `experimental.quotaToast.toastStyle` | `classic` | The sidebar honors both `classic` and `grouped` quota-row formatting. |
 | `experimental.quotaToast.onlyCurrentModel` | `false` | Filters sidebar quota rows to the current session model/provider when available. |
 | `experimental.quotaToast.showSessionTokens` | `true` | Adds the `Session input/output tokens` heading plus a one-line total input/output summary in the sidebar when session token data is available. |

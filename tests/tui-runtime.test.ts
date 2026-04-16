@@ -123,7 +123,7 @@ describe("tui runtime helpers", () => {
       providerFetchCache: new Map(),
     });
 
-    expect(panel).toEqual({ enabled: false, lines: [] });
+    expect(panel).toEqual({ status: "disabled", lines: [] });
     expect(collectQuotaRenderData).not.toHaveBeenCalled();
   });
 
@@ -168,7 +168,7 @@ describe("tui runtime helpers", () => {
       providerFetchCache: new Map(),
     });
 
-    expect(panel).toEqual({ enabled: true, lines: ["Quota line"] });
+    expect(panel).toEqual({ status: "ready", lines: ["Quota line"] });
     expect(collectQuotaRenderData).toHaveBeenCalledOnce();
     expect(buildSidebarQuotaPanelLines).toHaveBeenCalledOnce();
   });
@@ -223,7 +223,7 @@ describe("tui runtime helpers", () => {
       providerFetchCache: new Map(),
     });
 
-    expect(panel).toEqual({ enabled: true, lines: ["→ [Copilot] (business)"] });
+    expect(panel).toEqual({ status: "ready", lines: ["→ [Copilot] (business)"] });
     expect(collectQuotaRenderData).toHaveBeenCalledWith(
       expect.objectContaining({
         style: "grouped",
@@ -291,7 +291,7 @@ describe("tui runtime helpers", () => {
       providerFetchCache: new Map(),
     });
 
-    expect(panel).toEqual({ enabled: true, lines: ["Quota line"] });
+    expect(panel).toEqual({ status: "ready", lines: ["Quota line"] });
     expect(runtimeProviders).toHaveBeenCalledOnce();
   });
 

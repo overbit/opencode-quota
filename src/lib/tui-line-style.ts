@@ -6,5 +6,7 @@ export function getSidebarBodyLineColor(
   line: string,
   theme: Pick<TuiPluginApi["theme"]["current"], "text" | "textMuted">,
 ): TuiPluginApi["theme"]["current"]["text"] | TuiPluginApi["theme"]["current"]["textMuted"] {
-  return line === SESSION_TOKEN_SECTION_HEADING ? theme.text : theme.textMuted;
+  return line.length > 0 && SESSION_TOKEN_SECTION_HEADING.startsWith(line)
+    ? theme.text
+    : theme.textMuted;
 }

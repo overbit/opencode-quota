@@ -108,6 +108,21 @@ describe("plugin command handled boundary", () => {
     expect(injected).toContain("No quota providers detected");
   });
 
+  it("rethrows unexpected non-sentinel errors from handled commands", async () => {
+    const client = createClient();
+    const { QuotaToastPlugin } = await import("../src/plugin.js");
+    const hooks = await QuotaToastPlugin({ client } as any);
+    client.session.prompt.mockRejectedValue(new Error("inject failed"));
+    client.app.log.mockRejectedValue(new Error("log failed"));
+
+    await expect(
+      hooks["command.execute.before"]?.({
+        command: "quota",
+        sessionID: "session-inject-failure",
+      } as any),
+    ).rejects.toThrow("log failed");
+  });
+
   it("treats handled token slash commands as strict no-op when disabled", async () => {
     mocks.loadConfig.mockResolvedValue(makeQuotaToastTestConfig({ enabled: false }));
 

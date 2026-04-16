@@ -3,8 +3,9 @@ import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plug
 import { createEffect, createSignal, onCleanup } from "solid-js";
 
 import type { ProviderFetchCacheStore } from "./lib/quota-render-data.js";
-import type { SidebarPanelState } from "./lib/tui-runtime.js";
+import type { SidebarPanelState } from "./lib/tui-panel-state.js";
 
+import { getSidebarPanelLines, shouldRenderSidebarPanel } from "./lib/tui-panel-state.js";
 import { getSidebarBodyLineColor } from "./lib/tui-line-style.js";
 import { loadSidebarPanel } from "./lib/tui-runtime.js";
 
@@ -20,7 +21,7 @@ function SidebarContentView(props: {
   providerFetchCache: ProviderFetchCacheStore;
 }) {
   const [panel, setPanel] = createSignal<SidebarPanelState>({
-    enabled: false,
+    status: "loading",
     lines: [],
   });
 
@@ -104,10 +105,9 @@ function SidebarContentView(props: {
     for (const unsubscribe of unsubscribers) unsubscribe();
   });
 
-  const lines = () => {
-    if (panel().lines.length > 0) return panel().lines;
-    return [panel().enabled ? "Unavailable" : "Loading…"];
-  };
+  if (!shouldRenderSidebarPanel(panel())) return null;
+
+  const lines = () => getSidebarPanelLines(panel());
 
   return (
     <box gap={0}>

@@ -1,15 +1,11 @@
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
+import type { SidebarPanelState } from "./tui-panel-state.js";
 
 import type { ProviderFetchCacheStore, SessionModelMeta } from "./quota-render-data.js";
 
 import { createLoadConfigMeta, loadConfig } from "./config.js";
 import { collectQuotaRenderData } from "./quota-render-data.js";
 import { buildSidebarQuotaPanelLines } from "./tui-sidebar-format.js";
-
-export type SidebarPanelState = {
-  enabled: boolean;
-  lines: string[];
-};
 
 export function resolveWorkspaceDir(api: TuiPluginApi): string {
   return api.state.path.worktree || api.state.path.directory || process.cwd();
@@ -107,7 +103,7 @@ export async function loadSidebarPanel(params: {
 
   if (!config.enabled) {
     return {
-      enabled: false,
+      status: "disabled",
       lines: [],
     };
   }
@@ -128,7 +124,7 @@ export async function loadSidebarPanel(params: {
   });
 
   return {
-    enabled: true,
+    status: "ready",
     lines: result.data ? buildSidebarQuotaPanelLines({ data: result.data, config }) : [],
   };
 }
