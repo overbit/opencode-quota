@@ -14,7 +14,7 @@ What you get:
 - popup quota toasts after assistant responses
 - manual `/quota`, `/quota_status`, and `/tokens_*` commands
 
-**Quota providers**: Anthropic (Claude), GitHub Copilot, OpenAI (Plus/Pro), Cursor, Qwen Code, Alibaba Coding Plan, MiniMax Coding Plan, Chutes AI, Firmware AI, Google Antigravity, Z.ai Coding Plan, NanoGPT, and OpenCode Go.
+**Quota providers**: Anthropic (Claude), GitHub Copilot, OpenAI (Plus/Pro), Cursor, Qwen Code, Alibaba Coding Plan, MiniMax Coding Plan, Kimi Code, Chutes AI, Firmware AI, Google Antigravity, Z.ai Coding Plan, NanoGPT, and OpenCode Go.
 
 **Token reports**: All models and providers in [models.dev](https://models.dev), plus deterministic local pricing for Cursor Auto/Composer and Cursor model aliases that are not on models.dev.
 
@@ -155,24 +155,26 @@ Keep the `tui.json` or `tui.jsonc` entry above and disable toasts in `opencode.j
 
 ## Provider Setup At A Glance
 
-| Provider | Auto setup | Authentication | Quota |
-| --- | --- | --- | --- |
-| **Anthropic (Claude)** | Needs [quick setup](#anthropic-quick-setup) | Local CLI auth | Local CLI report |
-| **GitHub Copilot** | Usually | OpenCode auth or PAT | Remote API |
-| **OpenAI** | Yes | OpenCode auth | Remote API |
-| **Cursor** | Needs [quick setup](#cursor-quick-setup) | Companion auth | Local runtime accounting |
-| **Qwen Code** | Needs [quick setup](#qwen-code-quick-setup) | Companion auth | Local estimation |
-| **Alibaba Coding Plan** | Yes | OpenCode auth/global config/env | Local estimation |
-| **Firmware AI** | Usually | OpenCode auth/global config/env | Remote API |
-| **Chutes AI** | Usually | OpenCode auth/global config/env | Remote API |
-| **Google Antigravity** | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth | Remote API |
-| **Z.ai** | Yes | OpenCode auth/global config/env | Remote API |
-| **NanoGPT** | Usually | OpenCode auth/global config/env | Remote API |
-| **MiniMax Coding Plan** | Yes | OpenCode auth/global config/env | Remote API |
-| **OpenCode Go** | Needs [quick setup](#opencode-go-quick-setup) | Env/config auth | Dashboard scraping |
+| Provider                | Auto setup                                           | Authentication                  | Quota                    |
+| ----------------------- | ---------------------------------------------------- | ------------------------------- | ------------------------ |
+| **Anthropic (Claude)**  | Needs [quick setup](#anthropic-quick-setup)          | Local CLI auth                  | Local CLI report         |
+| **GitHub Copilot**      | Usually                                              | OpenCode auth or PAT            | Remote API               |
+| **OpenAI**              | Yes                                                  | OpenCode auth                   | Remote API               |
+| **Cursor**              | Needs [quick setup](#cursor-quick-setup)             | Companion auth                  | Local runtime accounting |
+| **Qwen Code**           | Needs [quick setup](#qwen-code-quick-setup)          | Companion auth                  | Local estimation         |
+| **Alibaba Coding Plan** | Yes                                                  | OpenCode auth/global config/env | Local estimation         |
+| **Firmware AI**         | Usually                                              | OpenCode auth/global config/env | Remote API               |
+| **Chutes AI**           | Usually                                              | OpenCode auth/global config/env | Remote API               |
+| **Google Antigravity**  | Needs [quick setup](#google-antigravity-quick-setup) | Companion auth                  | Remote API               |
+| **Z.ai**                | Yes                                                  | OpenCode auth/global config/env | Remote API               |
+| **NanoGPT**             | Usually                                              | OpenCode auth/global config/env | Remote API               |
+| **MiniMax Coding Plan** | Yes                                                  | OpenCode auth/global config/env | Remote API               |
+| **Kimi Code**           | Yes                                                  | OpenCode auth/global config/env | Remote API               |
+| **OpenCode Go**         | Needs [quick setup](#opencode-go-quick-setup)        | Env/config auth                 | Dashboard scraping       |
 
 
 <a id="anthropic-quick-setup"></a>
+
 <details>
 <summary><strong>Quick setup: Anthropic (Claude)</strong></summary>
 
@@ -462,7 +464,23 @@ MiniMax Coding Plan uses trusted env vars or trusted user/global OpenCode config
 
 </details>
 
+<a id="kimi-code-notes"></a>
+
+<details>
+<summary><strong>Kimi Code</strong></summary>
+
+Kimi Code uses trusted env vars or trusted user/global OpenCode config first, then native OpenCode auth from `auth.json["kimi-for-coding"]` or `auth.json["kimi-code"]`. No additional plugin is required.
+
+- API key sources are `KIMI_API_KEY`, `KIMI_CODE_API_KEY`, trusted user/global `provider["kimi-for-coding"].options.apiKey` or `provider["kimi-code"].options.apiKey`, then `auth.json`.
+- Repo-local `opencode.json` / `opencode.jsonc` is ignored for Kimi secrets.
+- Allowed env templates are limited to `{env:KIMI_API_KEY}` and `{env:KIMI_CODE_API_KEY}`.
+- The plugin calls `https://api.kimi.com/coding/v1/usages` (Kimi Code) and falls back to `https://api.moonshot.ai/v1/usages` (Moonshot) when needed.
+- `/quota_status` shows auth detection, API-key diagnostics, live quota state, and endpoint errors.
+
+</details>
+
 <a id="zai-notes"></a>
+
 <details>
 <summary><strong>Z.ai</strong></summary>
 
