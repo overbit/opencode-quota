@@ -60,17 +60,10 @@ async function getProviderAvailability(params: {
   provider: QuotaProvider;
   ctx: QuotaProviderContext;
 }): Promise<QuotaAvailability> {
-  try {
-    return {
-      provider: params.provider,
-      ok: await params.provider.isAvailable(params.ctx),
-    };
-  } catch {
-    return {
-      provider: params.provider,
-      ok: false,
-    };
-  }
+  return {
+    provider: params.provider,
+    ok: await params.provider.isAvailable(params.ctx),
+  };
 }
 
 export type CollectQuotaRenderDataResult = {
@@ -205,12 +198,7 @@ async function fetchProviderWithCache(params: {
   const now = Date.now();
   const existing = providerFetchCache.get(cacheKey);
 
-  if (
-    existing?.result &&
-    existing.timestamp > 0 &&
-    ttlMs > 0 &&
-    now - existing.timestamp < ttlMs
-  ) {
+  if (existing?.result && existing.timestamp > 0 && ttlMs > 0 && now - existing.timestamp < ttlMs) {
     return existing.result;
   }
 
