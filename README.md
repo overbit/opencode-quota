@@ -20,24 +20,17 @@ What you get:
 
 <table>
   <tr>
-    <td width="25%"></td>
-    <td width="50%" align="center">Example of TUI sidebar</td>
-    <td width="25%"></td>
-  </tr>
-  <tr>
-    <td width="25%"></td>
-    <td width="50%">
+    <td width="100%">
       <img src="https://shawnkiser.com/opencode-quota/sidebar.webp" alt="Image of opencode-quota /tokens_weekly output" />
     </td>
-    <td width="25%"></td>
+  </tr>
+    <tr>
+    <td width="100%" align="center">Example of TUI sidebar</td>
   </tr>
 </table>
 
 <table>
-  <tr>
-    <td width="50%" align="center">Example of popup toast</td>
-    <td width="50%" align="center">Example of <code>/tokens_weekly</code></td>
-  </tr>
+
   <tr>
     <td width="50%">
       <img src="https://shawnkiser.com/opencode-quota/toast.webp" alt="Image of opencode-quota toast" />
@@ -45,6 +38,10 @@ What you get:
     <td width="50%">
       <img src="https://shawnkiser.com/opencode-quota/token.webp" alt="Image of opencode-quota /tokens_weekly output" />
     </td>
+  </tr>
+    <tr>
+    <td width="50%" align="center">Example of popup toast</td>
+    <td width="50%" align="center">Example of <code>/tokens_weekly</code></td>
   </tr>
 </table>
 
