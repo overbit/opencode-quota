@@ -62,11 +62,11 @@ npx @slkiser/opencode-quota init
 
 The installer (append-only, preserves existing values) asks for:
 
-- **Scope**: `Project` or `Global` (`Project` is the usual default)
+- **Scope**: `Project` or `Global` 
 - **Quota UI**: `Toast`, `Sidebar`, `Toast + Sidebar`, or `None (manual /quota and /tokens_* only)`
-- **Provider mode**: `Auto-detect` or `Manual select` (`Auto-detect` is the usual default)
-- **Layout style**: `classic` or `grouped` (`classic` is the usual default)
-- **Show session input/output tokens**: `Yes` or `No` (`Yes` is the usual default)
+- **Provider mode**: `Auto-detect` or `Manual select` 
+- **Layout style**: `classic` or `grouped` 
+- **Show session input/output tokens**: `Yes` or `No` 
 
 All quota settings live in `opencode.json` or `opencode.jsonc`. `tui.json` or `tui.jsonc` is only for loading the sidebar plugin.
 
