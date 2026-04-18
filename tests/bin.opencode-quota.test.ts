@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const installerMocks = vi.hoisted(() => ({
@@ -54,5 +59,25 @@ describe("opencode-quota bin", () => {
     expect(code).toBe(1);
     expect(log).toHaveBeenCalledWith(expect.stringContaining("Usage:"));
     log.mockRestore();
+  });
+
+  it("treats symlinked bin paths as direct CLI execution", async () => {
+    const { cliShouldRunMain } = await import("../src/bin/opencode-quota.js");
+
+    const modulePath = fileURLToPath(
+      new URL("../src/bin/opencode-quota.ts", import.meta.url),
+    );
+    const tempDir = mkdtempSync(join(tmpdir(), "opencode-quota-bin-"));
+    const symlinkPath = join(tempDir, "opencode-quota");
+
+    try {
+      symlinkSync(modulePath, symlinkPath);
+
+      expect(cliShouldRunMain(symlinkPath, modulePath)).toBe(true);
+      expect(cliShouldRunMain(join(tempDir, "other.js"), modulePath)).toBe(false);
+      expect(cliShouldRunMain(undefined, modulePath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

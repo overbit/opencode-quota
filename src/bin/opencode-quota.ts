@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from "url";
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { runInitInstaller } from "../lib/init-installer.js";
 
@@ -15,6 +17,26 @@ const USAGE = [
 
 function printUsage(): void {
   console.log(USAGE);
+}
+
+function resolveCliPath(filePath: string): string {
+  try {
+    return realpathSync.native(filePath);
+  } catch {
+    return resolve(filePath);
+  }
+}
+
+export function cliShouldRunMain(
+  argv1: string | undefined = process.argv[1],
+  modulePath: string = fileURLToPath(import.meta.url),
+  resolvePath: (filePath: string) => string = resolveCliPath,
+): boolean {
+  if (!argv1) {
+    return false;
+  }
+
+  return resolvePath(modulePath) === resolvePath(argv1);
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
@@ -38,10 +60,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   return 1;
 }
 
-const isDirectRun =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isDirectRun) {
+if (cliShouldRunMain()) {
   void main().then((code) => {
     process.exitCode = code;
   });
