@@ -60,10 +60,17 @@ async function getProviderAvailability(params: {
   provider: QuotaProvider;
   ctx: QuotaProviderContext;
 }): Promise<QuotaAvailability> {
-  return {
-    provider: params.provider,
-    ok: await params.provider.isAvailable(params.ctx),
-  };
+  try {
+    return {
+      provider: params.provider,
+      ok: await params.provider.isAvailable(params.ctx),
+    };
+  } catch {
+    return {
+      provider: params.provider,
+      ok: false,
+    };
+  }
 }
 
 export type CollectQuotaRenderDataResult = {
