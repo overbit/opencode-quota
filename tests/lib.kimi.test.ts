@@ -132,34 +132,8 @@ describe("queryKimiQuota", () => {
     });
   });
 
-  it("falls back to Moonshot endpoint when Kimi endpoint returns non-200", async () => {
+  it("returns error when endpoint fails", async () => {
     mockKimiAuthConfigured();
-    mockKimiHttpFailure(404, "not found");
-    mockKimiHttpSuccess({
-      usage: {
-        limit: 50,
-        used: 10,
-      },
-    });
-
-    const result = await queryKimiQuota();
-
-    expect(result).toMatchObject({
-      success: true,
-      windows: [
-        {
-          label: "Weekly limit",
-          used: 10,
-          limit: 50,
-          percentRemaining: 80,
-        },
-      ],
-    });
-  });
-
-  it("returns error when both endpoints fail", async () => {
-    mockKimiAuthConfigured();
-    mockKimiHttpFailure(401, "Unauthorized");
     mockKimiHttpFailure(401, "Unauthorized");
 
     const result = await queryKimiQuota();
@@ -170,10 +144,9 @@ describe("queryKimiQuota", () => {
     });
   });
 
-  it("returns error with unexpected response keys when both endpoints have no usable data", async () => {
+  it("returns error with unexpected response keys when endpoint has no usable data", async () => {
     mockKimiAuthConfigured();
     mockKimiHttpSuccess({ message: "hello", code: 0 });
-    mockKimiHttpSuccess({ foo: "bar" });
 
     const result = await queryKimiQuota();
 
@@ -185,7 +158,6 @@ describe("queryKimiQuota", () => {
 
   it("returns API error on non-200 with sanitized text", async () => {
     mockKimiAuthConfigured();
-    mockKimiHttpFailure(403, "Forbidden access");
     mockKimiHttpFailure(403, "Forbidden access");
 
     const result = await queryKimiQuota();

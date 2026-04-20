@@ -5,8 +5,7 @@ import { fetchWithTimeout } from "./http.js";
 import { resolveKimiAuthCached, DEFAULT_KIMI_AUTH_CACHE_MAX_AGE_MS } from "./kimi-auth.js";
 
 const KIMI_USAGE_URL = "https://api.kimi.com/coding/v1/usages";
-const MOONSHOT_USAGE_URL = "https://api.moonshot.ai/v1/usages";
-const USER_AGENT = "KimiCLI/1.35";
+const USER_AGENT = "OpenCode-Quota-Toast/1.0";
 
 function getFiniteNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -244,39 +243,22 @@ export async function queryKimiQuota(): Promise<KimiResult> {
     return { success: false, error: auth.error };
   }
 
-  const kimiResult = await fetchKimiQuotaFromUrl(KIMI_USAGE_URL, auth.apiKey);
-  if (kimiResult.ok && kimiResult.windows.length > 0) {
+  const result = await fetchKimiQuotaFromUrl(KIMI_USAGE_URL, auth.apiKey);
+  if (result.ok && result.windows.length > 0) {
     return {
       success: true,
       label: "Kimi Code",
-      windows: kimiResult.windows,
+      windows: result.windows,
     };
   }
 
-  const moonshotResult = await fetchKimiQuotaFromUrl(MOONSHOT_USAGE_URL, auth.apiKey);
-  if (moonshotResult.ok && moonshotResult.windows.length > 0) {
-    return {
-      success: true,
-      label: "Kimi Code",
-      windows: moonshotResult.windows,
-    };
+  if (!result.ok) {
+    return { success: false, error: result.error };
   }
 
-  // Prefer the first endpoint's error if both failed or returned no windows.
-  const firstError = !kimiResult.ok ? kimiResult.error : null;
-  const secondError = !moonshotResult.ok ? moonshotResult.error : null;
-
-  if (firstError) {
-    return { success: false, error: firstError };
-  }
-  if (secondError) {
-    return { success: false, error: secondError };
-  }
-
-  // Both succeeded structurally but had no usable windows.
-  const topLevelKeys = (kimiResult as Extract<FetchResult, { ok: true }>).topLevelKeys;
+  // Succeeded structurally but had no usable windows.
   return {
     success: false,
-    error: describeUnexpectedPayload(topLevelKeys),
+    error: describeUnexpectedPayload(result.topLevelKeys),
   };
 }
