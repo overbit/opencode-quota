@@ -387,4 +387,26 @@ describe("google gemini cli companion resolution", () => {
       resolvedPath: constantsPath,
     });
   });
+
+  it("reads credentials from a nested node_modules structure in runtime packages directory", async () => {
+    const runtimeCacheDir = join(tempDir, "cache", "opencode");
+    const packageRoot = join(runtimeCacheDir, "packages", "opencode-gemini-auth-1.0.0");
+    const nestedRoot = join(packageRoot, "node_modules", "opencode-gemini-auth");
+    const distPath = join(nestedRoot, "dist", "index.js");
+    mkdirSync(join(nestedRoot, "dist"), { recursive: true });
+    writeGeminiCredentials(distPath, { declaration: "var" });
+    moduleMocks.runtimeDirs.value = { cacheDirs: [runtimeCacheDir] };
+    moduleMocks.resolveImpl.mockImplementation(() => {
+      throw moduleNotFound();
+    });
+
+    const mod = await import("../src/lib/google-gemini-cli-companion.js");
+
+    await expect(mod.resolveGeminiCliClientCredentials()).resolves.toMatchObject({
+      state: "configured",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      resolvedPath: distPath,
+    });
+  });
 });

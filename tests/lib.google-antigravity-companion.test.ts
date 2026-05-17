@@ -331,4 +331,26 @@ describe("google antigravity companion resolution", () => {
       state: "invalid",
     });
   });
+
+  it("reads credentials from a nested node_modules structure in runtime packages directory", async () => {
+    const runtimeCacheDir = join(tempDir, "cache", "opencode");
+    const packageRoot = join(runtimeCacheDir, "packages", "opencode-antigravity-auth-1.0.0");
+    const nestedRoot = join(packageRoot, "node_modules", "opencode-antigravity-auth");
+    const distPath = join(nestedRoot, "dist", "src", "constants.js");
+    mkdirSync(join(nestedRoot, "dist", "src"), { recursive: true });
+    writeAntigravityCredentials(distPath, { declaration: "var" });
+    moduleMocks.runtimeDirs.value = { cacheDirs: [runtimeCacheDir] };
+    moduleMocks.resolveImpl.mockImplementation(() => {
+      throw moduleNotFound();
+    });
+
+    const mod = await import("../src/lib/google-antigravity-companion.js");
+
+    await expect(mod.resolveAntigravityClientCredentials()).resolves.toMatchObject({
+      state: "configured",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      resolvedPath: distPath,
+    });
+  });
 });

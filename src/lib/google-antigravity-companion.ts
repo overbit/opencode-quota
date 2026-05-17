@@ -104,7 +104,8 @@ function normalizeCredential(value: unknown): string {
 }
 
 function getCompanionResolvePaths(): string[] {
-  return [...getOpencodeRuntimeDirCandidates().cacheDirs];
+  const paths = [...getOpencodeRuntimeDirCandidates().cacheDirs];
+  return paths;
 }
 
 function getRuntimePackageRoots(): string[] {
@@ -120,6 +121,7 @@ function getRuntimePackageRoots(): string[] {
       for (const entry of entries) {
         if (entry.isDirectory() && entry.name.startsWith(COMPANION_PACKAGE_NAME)) {
           packageRoots.push(join(packagesDir, entry.name));
+          packageRoots.push(join(packagesDir, entry.name, "node_modules", COMPANION_PACKAGE_NAME));
         }
       }
     } catch {

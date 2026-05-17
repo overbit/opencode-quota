@@ -1,5 +1,5 @@
 import { homedir } from "os";
-import { join } from "path";
+import { join, dirname } from "path";
 import {
   xdgCache,
   xdgConfig,
