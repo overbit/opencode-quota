@@ -221,6 +221,7 @@ Most providers work automatically. If a provider has a “Needs setup” link, o
 | Zhipu Coding Plan | Automatic | Remote API |
 | NanoGPT | Usually automatic | Remote API |
 | DeepSeek | Usually automatic | Remote API balance |
+| Ollama Cloud | [Needs setup](#ollama-cloud) | Dashboard scraping |
 | OpenCode Go | [Needs setup](#opencode-go) | Dashboard scraping |
 
 ## Common configuration
@@ -512,6 +513,25 @@ Or put the key in trusted user/global OpenCode config, not repo-local config:
 ```
 
 If you use manual provider selection, include `deepseek` in `enabledProviders`.
+
+</details>
+
+<a id="ollama-cloud"></a>
+<details>
+<summary><strong>Ollama Cloud</strong></summary>
+
+Ollama Cloud quota scrapes the Ollama Cloud settings page and needs a `__Secure-session` cookie:
+
+```bash
+export OLLAMA_USAGE_COOKIE="your-session-cookie-value"
+```
+
+Or use one of these config files (cookie without the `__Secure-session=` prefix, or with — the plugin normalizes it):
+
+- `~/.config/opencode/opencode-quota/ollama-cloud.json`: `{ "cookie": "..." }`
+- `~/.config/ollama-usage/config.yaml`: `cookie: "..."`
+
+To find the cookie, open `ollama.com/settings` in your browser, open Developer Tools → Storage → Cookies, and copy the value of `__Secure-session`.
 
 </details>
 
