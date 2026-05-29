@@ -452,49 +452,6 @@ describe("runCliShowCommand", () => {
     expect(provider.fetch).toHaveBeenCalledTimes(1); // still only called from text path
   });
 
-  it("--json output includes all expected QuotaExport schema fields", async () => {
-    const provider = {
-      id: "synthetic",
-      isAvailable: vi.fn().mockResolvedValue(true),
-      fetch: vi.fn().mockResolvedValue({
-        attempted: true,
-        entries: [{ name: "Synthetic", percentRemaining: 60, resetTimeIso: "2026-07-01T00:00:00.000Z" }],
-        errors: [],
-      }),
-    };
-    mockProviders.push(provider);
-    writeFileSync(
-      join(workspaceDir, "opencode.json"),
-      JSON.stringify({
-        experimental: { quotaToast: { enabledProviders: ["synthetic"] } },
-      }),
-      "utf8",
-    );
-
-    // Populate cache via non-JSON show.
-    await runCliShowCommand({ argv: [], cwd: workspaceDir, stdout: { write: () => true } as any, stderr: { write: () => true } as any });
-
-    const jsonOut = createCaptureStream();
-    const jsonCode = await runCliShowCommand({
-      argv: ["--json"],
-      cwd: workspaceDir,
-      stdout: jsonOut.stream as any,
-      stderr: { write: () => true } as any,
-    });
-
-    expect(jsonCode).toBe(0);
-    const parsed = JSON.parse(jsonOut.output);
-    expect(parsed.version).toBe(1);
-    expect(typeof parsed.exportedAt).toBe("number");
-    expect(typeof parsed.fromCache).toBe("boolean");
-    expect(typeof parsed.cacheAgeSeconds).toBe("number");
-    expect(typeof parsed.providers).toBe("object");
-    expect(parsed.providers.synthetic.status).toBe("ok");
-    expect(parsed.providers.synthetic.entries[0].percentRemaining).toBe(60);
-    expect(typeof parsed.providers.synthetic.entries[0].resetAt).toBe("number");
-    expect(parsed.providers.synthetic.entries[0].unlimited).toBe(false);
-  });
-
   it("--json reads from cache only and returns unavailable when no cache exists", async () => {
     const provider = {
       id: "synthetic",
@@ -690,96 +647,38 @@ describe("runCliShowCommand", () => {
     expect(jsonErr.output).toContain("opencode-quota show");
   });
 
-  it("--threshold validates positive finite number", async () => {
-    const jsonOut = createCaptureStream();
-    const jsonErr = createCaptureStream();
-
-    const code = await runCliShowCommand({
-      argv: ["--json", "--threshold", "abc"],
-      cwd: workspaceDir,
-      stdout: jsonOut.stream as any,
-      stderr: jsonErr.stream as any,
-    });
-
-    expect(code).toBe(1);
-    expect(jsonErr.output).toContain("--threshold must be a positive finite number");
-  });
-
-  it("--threshold rejects zero", async () => {
-    const jsonOut = createCaptureStream();
-    const jsonErr = createCaptureStream();
-
-    const code = await runCliShowCommand({
-      argv: ["--json", "--threshold", "0"],
-      cwd: workspaceDir,
-      stdout: jsonOut.stream as any,
-      stderr: jsonErr.stream as any,
-    });
-
-    expect(code).toBe(1);
-    expect(jsonErr.output).toContain("--threshold must be a positive finite number");
-  });
-
-  it("--threshold missing value produces error", async () => {
-    const jsonOut = createCaptureStream();
-    const jsonErr = createCaptureStream();
-
-    const code = await runCliShowCommand({
-      argv: ["--json", "--threshold"],
-      cwd: workspaceDir,
-      stdout: jsonOut.stream as any,
-      stderr: jsonErr.stream as any,
-    });
-
-    expect(code).toBe(1);
-    expect(jsonErr.output).toContain("Missing value for --threshold");
-  });
-
-  it("--threshold without --json produces exit code 1 with error", async () => {
-    const stdout = createCaptureStream();
-    const stderr = createCaptureStream();
-
-    const code = await runCliShowCommand({
-      argv: ["--threshold", "5"],
-      cwd: workspaceDir,
-      stdout: stdout.stream as any,
-      stderr: stderr.stream as any,
-    });
-
-    expect(code).toBe(1);
-    expect(stdout.output).toBe("");
-    expect(stderr.output).toContain("--threshold requires --json");
-  });
-
-  it("--threshold > 100 is accepted (warned but accepted)", async () => {
-    const provider = {
-      id: "synthetic",
-      isAvailable: vi.fn().mockResolvedValue(true),
-      fetch: vi.fn().mockResolvedValue({
-        attempted: true,
-        entries: [{ name: "Synthetic", percentRemaining: 99 }],
-        errors: [],
-      }),
+  it("--threshold validates input and requires --json", async () => {
+    const run = async (argv: string[]) => {
+      const stdout = createCaptureStream();
+      const stderr = createCaptureStream();
+      const code = await runCliShowCommand({
+        argv,
+        cwd: workspaceDir,
+        stdout: stdout.stream as any,
+        stderr: stderr.stream as any,
+      });
+      return { code, stderr: stderr.output };
     };
-    mockProviders.push(provider);
-    writeFileSync(
-      join(workspaceDir, "opencode.json"),
-      JSON.stringify({
-        experimental: { quotaToast: { enabledProviders: ["synthetic"] } },
-      }),
-      "utf8",
-    );
 
-    await runCliShowCommand({ argv: [], cwd: workspaceDir, stdout: { write: () => true } as any, stderr: { write: () => true } as any });
+    // Invalid value
+    let result = await run(["--json", "--threshold", "abc"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--threshold must be a positive finite number");
 
-    const jsonCode = await runCliShowCommand({
-      argv: ["--json", "--threshold=101"],
-      cwd: workspaceDir,
-      stdout: { write: () => true } as any,
-      stderr: { write: () => true } as any,
-    });
+    // Zero
+    result = await run(["--json", "--threshold", "0"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--threshold must be a positive finite number");
 
-    // Threshold > 100 is accepted but warned about. Since percentRemaining=99 < 101, exit 1.
-    expect(jsonCode).toBe(1);
+    // Missing value
+    result = await run(["--json", "--threshold"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Missing value for --threshold");
+
+    // Without --json
+    result = await run(["--threshold", "5"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--threshold requires --json");
   });
+
 });

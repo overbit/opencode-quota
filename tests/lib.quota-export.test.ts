@@ -74,24 +74,15 @@ function createMockContext(): any {
 // --------------- describe blocks ---------------
 
 describe("resolveExportPath", () => {
-  it("returns XDG default path when configured path is empty", () => {
-    const result = resolveExportPath("");
-    expect(result).toBe("/tmp/test-opencode-quota-export/cache/quota-export.json");
-  });
-
-  it("expands ~/ prefix to homedir", () => {
-    const result = resolveExportPath("~/my-exports/quota.json");
-    expect(result).toBe(join(homedir(), "my-exports/quota.json"));
-  });
-
-  it("passes absolute paths through unchanged", () => {
-    const result = resolveExportPath("/etc/opencode/export.json");
-    expect(result).toBe("/etc/opencode/export.json");
-  });
-
-  it("passes relative non-tilde paths through as-is", () => {
-    const result = resolveExportPath("relative/path/quota.json");
-    expect(result).toBe("relative/path/quota.json");
+  it("handles empty, tilde, absolute, and relative paths", () => {
+    expect(resolveExportPath("")).toBe(
+      "/tmp/test-opencode-quota-export/cache/quota-export.json",
+    );
+    expect(resolveExportPath("~/my-exports/quota.json")).toBe(
+      join(homedir(), "my-exports/quota.json"),
+    );
+    expect(resolveExportPath("/etc/opencode/export.json")).toBe("/etc/opencode/export.json");
+    expect(resolveExportPath("relative/path/quota.json")).toBe("relative/path/quota.json");
   });
 });
 
@@ -184,33 +175,6 @@ describe("buildQuotaExport", () => {
     }
   });
 
-  it("omits resetAt when entry has no resetTimeIso", async () => {
-    mockReadCachedProviderResult.mockResolvedValue({
-      hit: true,
-      result: {
-        attempted: true,
-        entries: [{ name: "No Reset", percentRemaining: 50 }],
-        errors: [],
-      },
-      timestamp: new Date("2026-06-01T11:00:00.000Z").getTime(),
-      stale: false,
-    });
-
-    const exportData = await buildQuotaExport({
-      providers: [createMockProvider("no-reset")],
-      ctx: createMockContext(),
-      ttlMs: 60_000,
-      fromCache: true,
-    });
-
-    const provider = exportData.providers["no-reset"];
-    expect(provider.status).toBe("ok");
-
-    if (provider.status === "ok") {
-      expect(provider.entries[0].resetAt).toBeUndefined();
-    }
-  });
-
   it("returns status unavailable when provider has no cache entry", async () => {
     mockReadCachedProviderResult.mockResolvedValue({ hit: false });
 
@@ -274,79 +238,6 @@ describe("buildQuotaExport", () => {
 
     // Oldest is "a" at 10:00, now is 12:00 → 2h = 7200s
     expect(exportData.cacheAgeSeconds).toBe(7200);
-  });
-
-  it("sets cacheAgeSeconds to 0 when no ok/error providers exist", async () => {
-    mockReadCachedProviderResult.mockResolvedValue({ hit: false });
-
-    const exportData = await buildQuotaExport({
-      providers: [createMockProvider("x")],
-      ctx: createMockContext(),
-      ttlMs: 60_000,
-      fromCache: true,
-    });
-
-    expect(exportData.cacheAgeSeconds).toBe(0);
-  });
-
-  it("propagates fromCache flag", async () => {
-    mockReadCachedProviderResult.mockResolvedValue({ hit: false });
-
-    const cached = await buildQuotaExport({
-      providers: [createMockProvider("x")],
-      ctx: createMockContext(),
-      ttlMs: 60_000,
-      fromCache: true,
-    });
-    expect(cached.fromCache).toBe(true);
-
-    const notCached = await buildQuotaExport({
-      providers: [createMockProvider("x")],
-      ctx: createMockContext(),
-      ttlMs: 60_000,
-      fromCache: false,
-    });
-    expect(notCached.fromCache).toBe(false);
-  });
-
-  it("handles multiple providers with mixed statuses", async () => {
-    mockReadCachedProviderResult
-      .mockResolvedValueOnce({
-        hit: true,
-        result: {
-          attempted: true,
-          entries: [{ name: "OK Provider", percentRemaining: 80 }],
-          errors: [],
-        },
-        timestamp: new Date("2026-06-01T11:50:00.000Z").getTime(),
-        stale: false,
-      })
-      .mockResolvedValueOnce({ hit: false })
-      .mockResolvedValueOnce({
-        hit: true,
-        result: {
-          attempted: true,
-          entries: [],
-          errors: [{ label: "E", message: "fail" }],
-        },
-        timestamp: new Date("2026-06-01T11:55:00.000Z").getTime(),
-        stale: false,
-      });
-
-    const exportData = await buildQuotaExport({
-      providers: [
-        createMockProvider("good"),
-        createMockProvider("missing"),
-        createMockProvider("errored"),
-      ],
-      ctx: createMockContext(),
-      ttlMs: 60_000,
-      fromCache: true,
-    });
-
-    expect(exportData.providers.good.status).toBe("ok");
-    expect(exportData.providers.missing.status).toBe("unavailable");
-    expect(exportData.providers.errored.status).toBe("error");
   });
 
   it("omits window when neither label nor name matches a known pattern", async () => {

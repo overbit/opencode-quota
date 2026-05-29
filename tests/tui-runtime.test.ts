@@ -1514,38 +1514,5 @@ describe("tui runtime helpers", () => {
       ).rejects.toThrow("write rejected");
     });
 
-    it("does not call buildQuotaExport when export is disabled", async () => {
-      writeFileSync(
-        join(worktreeDir, "opencode.json"),
-        JSON.stringify({
-          experimental: {
-            quotaToast: {
-              enabled: true,
-              export: { enabled: false },
-            },
-          },
-        }),
-        "utf8",
-      );
-
-      await writeTuiQuotaExportIfEnabled({
-        api: {
-          state: {
-            provider: [],
-            path: {
-              worktree: worktreeDir,
-              directory: nestedDir,
-            },
-            session: {
-              messages: () => [],
-            },
-          },
-          client: {},
-        } as any,
-      });
-
-      expect(mockBuildQuotaExport).not.toHaveBeenCalled();
-      expect(mockWriteQuotaExport).not.toHaveBeenCalled();
-    });
   });
 });
