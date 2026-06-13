@@ -1670,6 +1670,7 @@ nanogpt:
 copilot_quota_auth:
 google_antigravity:
 google_gemini_cli:
+google_agy:
 storage:
 pricing_snapshot:
 supported_providers_pricing:
