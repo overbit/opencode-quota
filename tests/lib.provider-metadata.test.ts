@@ -149,6 +149,13 @@ describe("provider-metadata", () => {
         quickSetupAnchor: "opencode-go",
         notes: "Scrapes the OpenCode Go dashboard; requires workspaceId and authCookie",
       },
+      {
+        id: "ollama-cloud",
+        autoSetup: "manual_env_config",
+        authentication: "state_only",
+        quota: "remote_api",
+        notes: "Scrapes the Ollama Cloud settings page; requires __Secure-session cookie via OLLAMA_USAGE_COOKIE env or ollama-usage config",
+      },
     ]);
   });
 
