@@ -52,14 +52,10 @@ export const googleAgyProvider: QuotaProvider = {
       let groupName: string | undefined;
       const name = bucket.displayName;
 
-      if (name.startsWith("Gemini 2.5")) {
-        groupName = "Gemini 2.5";
-      } else if (name.startsWith("Gemini 3 ") || name.startsWith("Gemini 3.1")) {
-        groupName = "Gemini 3 & 3.1";
-      } else if (name.startsWith("Gemini 3.5")) {
-        groupName = "Gemini 3.5";
-      } else if (name.includes("Claude") && name.includes("4.6")) {
-        groupName = "Claude 4.6";
+      if (name.includes("Gemini")) {
+        groupName = "Gemini Models";
+      } else if (name.includes("Claude") || name.includes("GPT")) {
+        groupName = "Claude and GPT models";
       }
 
       if (!groupName) continue;

@@ -57,9 +57,9 @@ describe("google agy provider", () => {
     expect(out.attempted).toBe(true);
     expect(out.entries).toEqual([
       {
-        name: "Gemini 2.5 (ali..example)",
+        name: "Gemini Models (ali..example)",
         group: "Google Agy",
-        label: "Gemini 2.5:",
+        label: "Gemini Models:",
         right: "1,234 left",
         percentRemaining: 64,
         resetTimeIso: "2026-01-01T00:00:00.000Z",
@@ -93,9 +93,9 @@ describe("google agy provider", () => {
     expectAttemptedWithNoErrors(out);
     expect(out.entries).toEqual([
       {
-        name: "Gemini 3.5 (ali..example)",
+        name: "Gemini Models (ali..example)",
         group: "Google Agy",
-        label: "Gemini 3.5:",
+        label: "Gemini Models:",
         right: "50 left TOKENS",
         percentRemaining: 20,
         resetTimeIso: "2026-01-01T12:00:00Z",
@@ -127,13 +127,11 @@ describe("google agy provider", () => {
     const out = await googleAgyProvider.fetch({ client: {} } as any);
     expectAttemptedWithNoErrors(out);
     
-    // Check that we only get the 4 consolidated groups, sorted alphabetically
+    // Check that we only get the 2 consolidated groups, sorted alphabetically
     const entryLabels = out.entries.map(e => e.label);
     expect(entryLabels).toEqual([
-      "Claude 4.6:",
-      "Gemini 2.5:",
-      "Gemini 3 & 3.1:",
-      "Gemini 3.5:",
+      "Claude and GPT models:",
+      "Gemini Models:",
     ]);
   });
 
