@@ -46,15 +46,6 @@ const RE_MONTHLY_RESET_FIRST = new RegExp(
   String.raw`monthlyUsage:\$R\[\d+\]=\{[^}]*resetInSec:${SCRAPED_NUMBER_PATTERN}[^}]*usagePercent:${SCRAPED_NUMBER_PATTERN}[^}]*\}`,
 );
 
-/**
- * Regex patterns for the newer data-slot HTML format.
- * Used for extracting usage values from HTML like:
- * <span data-slot="usage-value"><!--$-->66<!--/-->%</span>
- */
-const RE_DATA_SLOT_USAGE_VALUE = new RegExp(
-  String.raw`data-slot="usage-value">[^%]*${SCRAPED_NUMBER_PATTERN}%?`,
-);
-
 interface ScrapedWindowUsage {
   usagePercent: number;
   resetInSec: number;
@@ -115,14 +106,11 @@ function parseHumanReadableTime(timeStr: string): number {
 function parseDataSlotFormat(html: string): Partial<Record<string, ScrapedWindowUsage>> {
   const result: Partial<Record<string, ScrapedWindowUsage>> = {};
 
-  // Split by usage-item to get each window's content
+  // ponytail: split consumes the delimiter, so each chunk is already isolated
   const items = html.split(/data-slot="usage-item"/);
 
   for (let i = 1; i < items.length; i++) {
-    const itemHtml = items[i];
-    // Get content until the next usage-item or end
-    const endIndex = itemHtml.indexOf('data-slot="usage-item"');
-    const content = endIndex >= 0 ? itemHtml.substring(0, endIndex) : itemHtml;
+    const content = items[i];
 
     // Extract the label (Rolling Usage, Weekly Usage, Monthly Usage)
     const labelMatch = content.match(/data-slot="usage-label">([^<]+)</);
@@ -213,37 +201,32 @@ export async function queryOpenCodeGoQuota(
     const html = await response.text();
 
     // Try SolidJS SSR format first (more reliable when present)
-    const rolling = parseWindowUsage(html, RE_ROLLING_PCT_FIRST, RE_ROLLING_RESET_FIRST);
-    const weekly = parseWindowUsage(html, RE_WEEKLY_PCT_FIRST, RE_WEEKLY_RESET_FIRST);
-    const monthly = parseWindowUsage(html, RE_MONTHLY_PCT_FIRST, RE_MONTHLY_RESET_FIRST);
+    let rolling = parseWindowUsage(html, RE_ROLLING_PCT_FIRST, RE_ROLLING_RESET_FIRST);
+    let weekly = parseWindowUsage(html, RE_WEEKLY_PCT_FIRST, RE_WEEKLY_RESET_FIRST);
+    let monthly = parseWindowUsage(html, RE_MONTHLY_PCT_FIRST, RE_MONTHLY_RESET_FIRST);
 
-    // If SolidJS SSR parsing found at least one window, use it
-    if (rolling || weekly || monthly) {
-      const now = Date.now();
+    // Fall back to data-slot HTML format if SSR found nothing
+    if (!rolling && !weekly && !monthly) {
+      const dataSlotResult = parseDataSlotFormat(html);
+      rolling = dataSlotResult.rolling ?? null;
+      weekly = dataSlotResult.weekly ?? null;
+      monthly = dataSlotResult.monthly ?? null;
+    }
+
+    if (!rolling && !weekly && !monthly) {
       return {
-        success: true,
-        ...(rolling ? { rolling: normalizeWindowUsage(rolling, now) } : {}),
-        ...(weekly ? { weekly: normalizeWindowUsage(weekly, now) } : {}),
-        ...(monthly ? { monthly: normalizeWindowUsage(monthly, now) } : {}),
+        success: false,
+        error:
+          "Could not parse any known OpenCode Go dashboard usage windows (rollingUsage, weeklyUsage, monthlyUsage)",
       };
     }
 
-    // Fall back to data-slot HTML format
-    const dataSlotResult = parseDataSlotFormat(html);
-    if (Object.keys(dataSlotResult).length > 0) {
-      const now = Date.now();
-      return {
-        success: true,
-        ...(dataSlotResult.rolling ? { rolling: normalizeWindowUsage(dataSlotResult.rolling, now) } : {}),
-        ...(dataSlotResult.weekly ? { weekly: normalizeWindowUsage(dataSlotResult.weekly, now) } : {}),
-        ...(dataSlotResult.monthly ? { monthly: normalizeWindowUsage(dataSlotResult.monthly, now) } : {}),
-      };
-    }
-
+    const now = Date.now();
     return {
-      success: false,
-      error:
-        "Could not parse any known OpenCode Go dashboard usage windows (rollingUsage, weeklyUsage, monthlyUsage)",
+      success: true,
+      ...(rolling ? { rolling: normalizeWindowUsage(rolling, now) } : {}),
+      ...(weekly ? { weekly: normalizeWindowUsage(weekly, now) } : {}),
+      ...(monthly ? { monthly: normalizeWindowUsage(monthly, now) } : {}),
     };
   } catch (err) {
     return {
