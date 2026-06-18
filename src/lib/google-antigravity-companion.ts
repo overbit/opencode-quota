@@ -104,7 +104,9 @@ function normalizeCredential(value: unknown): string {
 }
 
 function getCompanionResolvePaths(): string[] {
-  const paths = [...getOpencodeRuntimeDirCandidates().cacheDirs];
+  const paths = [
+    ...getOpencodeRuntimeDirCandidates().cacheDirs,
+  ];
   return paths;
 }
 
