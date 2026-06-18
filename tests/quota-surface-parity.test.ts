@@ -621,6 +621,7 @@ describe("quota surface parity regressions", () => {
     });
 
     expect(panel.status).toBe("ready");
+    expect(panel.linesExpanded).toBeUndefined();
     const sidebarOutput = panel.lines.join("\n");
     expect(sidebarOutput).toContain("40%");
     expect(sidebarOutput).not.toContain("95%");

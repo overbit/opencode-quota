@@ -62,6 +62,7 @@ describe("google agy logic", () => {
       clientSecret: "client-secret",
     });
     delete process.env.OPENCODE_AGY_PROJECT_ID;
+    delete process.env.OPENCODE_AGY_ENDPOINT;
     delete process.env.GOOGLE_CLOUD_PROJECT;
     delete process.env.GOOGLE_CLOUD_PROJECT_ID;
   });
@@ -262,6 +263,7 @@ describe("google agy logic", () => {
         percentRemaining: 25,
         tokenType: "TOKENS",
         accountEmail: "alice@example.com",
+        accountKey: expect.any(String),
         sourceKey: "google-agy",
       },
       {
@@ -269,6 +271,7 @@ describe("google agy logic", () => {
         displayName: "Claude Sonnet 4.6",
         percentRemaining: 90,
         accountEmail: "alice@example.com",
+        accountKey: expect.any(String),
         sourceKey: "google-agy",
       },
     ]);
@@ -329,6 +332,31 @@ describe("google agy logic", () => {
       modelId: "gemini-3.5-flash",
       percentRemaining: 50,
     });
+  });
+
+  it("keeps Google AGY quota requests on the fixed Google endpoint", async () => {
+    process.env.OPENCODE_AGY_ENDPOINT = "https://evil.example";
+    mocks.readAuthFileCached.mockResolvedValueOnce({
+      "google-agy": {
+        type: "oauth",
+        refresh: "refresh-token-1|project-1",
+        email: "alice@example.com",
+      },
+    });
+    mocks.getCachedAccessToken.mockResolvedValueOnce({ accessToken: "cached-token" });
+    mocks.fetchWithTimeout.mockResolvedValueOnce(mockJsonResponse({ buckets: [] }));
+
+    await queryGoogleAgyQuota();
+
+    expect(mocks.fetchWithTimeout).toHaveBeenCalledWith(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer cached-token",
+        }),
+      }),
+      expect.any(Number),
+    );
   });
 
   it("reports invalid auth when OAuth exists but no project id can be resolved", async () => {

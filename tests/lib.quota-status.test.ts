@@ -1004,6 +1004,10 @@ describe("buildQuotaStatusReport", () => {
       "- live_entry_1: Pro 77 left percent_remaining=77 reset_at=2026-04-23T00:00:00.000Z",
     );
 
+    const agySection = getReportSection(report, "google_agy:");
+    expect(agySection).toContain("- auth_state: missing");
+    expect(agySection).toContain("- auth_source: (none)");
+
     const chutesSection = getReportSection(report, "chutes:");
     expect(chutesSection).toContain("- live_probe: error");
     expect(chutesSection).toContain("- live_error_1: probe failed with noise");

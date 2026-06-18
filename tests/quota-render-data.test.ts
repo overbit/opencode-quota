@@ -508,6 +508,53 @@ describe("collectQuotaRenderData shared quota state", () => {
     expect(syntheticProvider.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves account labels for preserved single-window entries", async () => {
+    const googleProvider = {
+      id: "google-antigravity",
+      isAvailable: vi.fn().mockResolvedValue(true),
+      fetch: vi.fn().mockResolvedValue({
+        attempted: true,
+        entries: [
+          {
+            name: "Claude (sha..gmail)",
+            group: "Claude",
+            label: "Claude:",
+            percentRemaining: 12,
+            resetTimeIso: "2026-01-01T12:00:00.000Z",
+          },
+          {
+            name: "G3Pro (bob..gmail)",
+            group: "G3Pro",
+            label: "G3Pro:",
+            percentRemaining: 83,
+            resetTimeIso: "2026-01-01T08:00:00.000Z",
+          },
+        ],
+        errors: [],
+        presentation: { classicStrategy: "preserve" },
+      }),
+    };
+
+    mockProviders.push(googleProvider);
+
+    const result = await collectQuotaRenderData({
+      client: TEST_CLIENT,
+      config: {
+        ...DEFAULT_CONFIG,
+        enabledProviders: ["google-antigravity"],
+        minIntervalMs: 60_000,
+        showSessionTokens: false,
+      },
+      formatStyle: "singleWindow",
+      surfaceExplicitProviderIssues: true,
+    });
+
+    expect(result.data?.entries.map((entry) => entry.name)).toEqual([
+      "[Claude] (sha..gmail)",
+      "[G3Pro] (bob..gmail)",
+    ]);
+  });
+
   it("projects Gemini quality tiers as bottleneck-only in single-window and all rows in all-windows", async () => {
     const geminiProvider = {
       id: "google-gemini-cli",

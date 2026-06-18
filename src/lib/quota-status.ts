@@ -1564,7 +1564,7 @@ export async function buildQuotaStatusReport(params: {
   const agyCompanionPresence = await inspectAgyCompanionPresence();
   const agyRows: ReportKvRow[] = [
     { key: "auth_state", value: agyAuthPresence.state },
-    { key: "auth_source", value: agyAuthPresence.sourceKey ?? "auth.json" },
+    { key: "auth_source", value: agyAuthPresence.sourceKey ?? "(none)" },
     { key: "account_count", value: String(agyAuthPresence.accountCount) },
     { key: "valid_account_count", value: String(agyAuthPresence.validAccountCount) },
     { key: "companion_package_state", value: agyCompanionPresence.state },

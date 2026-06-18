@@ -612,6 +612,7 @@ export interface GoogleAgyQuotaBucket {
   remainingAmount?: string;
   tokenType?: string;
   accountEmail?: string;
+  accountKey?: string;
   sourceKey?: GoogleAgyAuthSourceKey;
 }
 

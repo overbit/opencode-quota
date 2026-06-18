@@ -107,6 +107,34 @@ describe("google agy provider", () => {
     });
   });
 
+  it("keeps email-less AGY accounts separate using account keys", async () => {
+    const { queryGoogleAgyQuota } = await import("../src/lib/google-agy.js");
+    (queryGoogleAgyQuota as any).mockResolvedValueOnce({
+      success: true,
+      buckets: [
+        {
+          modelId: "gemini-3-5-flash",
+          displayName: "Gemini 3.5 Flash",
+          accountKey: "aaaaaaaa11111111",
+          percentRemaining: 20,
+        },
+        {
+          modelId: "gemini-3-5-flash",
+          displayName: "Gemini 3.5 Flash",
+          accountKey: "bbbbbbbb22222222",
+          percentRemaining: 80,
+        },
+      ],
+    });
+
+    const out = await googleAgyProvider.fetch({ client: {} } as any);
+    expectAttemptedWithNoErrors(out);
+    expect(out.entries.map((entry) => entry.name)).toEqual([
+      "Gemini Models (Account aaaaaaaa)",
+      "Gemini Models (Account bbbbbbbb)",
+    ]);
+  });
+
   it("groups and filters multiple models into canonical display buckets", async () => {
     const { queryGoogleAgyQuota } = await import("../src/lib/google-agy.js");
     (queryGoogleAgyQuota as any).mockResolvedValueOnce({

@@ -235,7 +235,7 @@ function buildSidebarPanelFromData(params: {
     };
   }
 
-  const hasExpandedDetail = Boolean(params.result.allWindowsData);
+  const hasExpandedDetail = params.formatStyle === "allWindows" && Boolean(params.result.allWindowsData);
   const compactData = params.result.singleWindowData ?? params.result.data;
   const primaryData =
     params.formatStyle === "allWindows" && params.result.allWindowsData
@@ -264,7 +264,7 @@ function buildSidebarPanelFromData(params: {
     : [];
 
   let linesExpanded: string[] | undefined;
-  if (params.result.allWindowsData) {
+  if (params.formatStyle === "allWindows" && params.result.allWindowsData) {
     linesExpanded = buildSidebarQuotaPanelLines({
       data: params.result.allWindowsData,
       config: { ...params.runtime.config, formatStyle: "allWindows" },

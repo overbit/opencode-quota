@@ -445,15 +445,16 @@ function projectProviderResultToStyle(
 
   const presentation = normalizeSingleWindowPresentation(result.presentation);
   if (presentation?.classicStrategy === "preserve") {
-    return entries.map((entry) =>
-      renameSingleWindowEntry(
+    return entries.map((entry) => {
+      const nameEntry = { ...entry, group: undefined };
+      return renameSingleWindowEntry(
         stripSingleWindowEntryMeta(entry, presentation?.singleWindowShowRight ?? false),
         buildSingleWindowName({
-          entry,
-          singleWindowDisplayName: entry.group || entry.name,
+          entry: nameEntry,
+          singleWindowDisplayName: presentation.singleWindowDisplayName ?? entry.name,
         }),
-      ),
-    );
+      );
+    });
   }
   const selectedEntry = selectSingleWindowEntry(entries);
   if (!selectedEntry) {

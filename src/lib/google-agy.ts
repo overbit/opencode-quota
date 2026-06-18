@@ -29,8 +29,7 @@ export const AGY_AUTH_KEYS = [
   "google-agy-auth",
 ] as const satisfies readonly GoogleAgyAuthSourceKey[];
 
-const AGY_CODE_ASSIST_ENDPOINT =
-  process.env.OPENCODE_AGY_ENDPOINT || "https://daily-cloudcode-pa.googleapis.com";
+const AGY_CODE_ASSIST_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
 const AGY_QUOTA_API_URL = `${AGY_CODE_ASSIST_ENDPOINT}/v1internal:retrieveUserQuota`;
 const AGY_TOKEN_REFRESH_URL = "https://oauth2.googleapis.com/token";
 const AGY_TOKEN_TIMEOUT_MS = 8_000;
@@ -56,6 +55,17 @@ export type AgyAccount = {
   accessToken?: string;
   expiresAt?: number;
 };
+
+function createAgyAccountKey(account: Pick<AgyAccount, "sourceKey" | "refreshToken" | "projectId">): string {
+  return crypto
+    .createHash("sha256")
+    .update(account.sourceKey)
+    .update("\0")
+    .update(account.projectId)
+    .update("\0")
+    .update(account.refreshToken)
+    .digest("hex");
+}
 
 export type AgyAuthPresence =
   | {
@@ -512,6 +522,7 @@ function mapQuotaBuckets(
           : {}),
         ...(normalizeString(bucket.tokenType) ? { tokenType: bucket.tokenType!.trim() } : {}),
         ...(account.email ? { accountEmail: account.email } : {}),
+        accountKey: createAgyAccountKey(account),
         sourceKey: account.sourceKey,
       };
     });

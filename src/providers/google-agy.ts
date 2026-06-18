@@ -12,6 +12,13 @@ function isAgyModel(model: string): boolean {
   return ["google-agy", "opencode-agy-auth", "google-agy-auth"].includes(providerId);
 }
 
+function formatAgyAccountLabel(bucket: { accountEmail?: string; accountKey?: string }): string {
+  if (bucket.accountEmail) {
+    return formatGoogleAccountLabel(bucket.accountEmail, "domainHint");
+  }
+  return bucket.accountKey ? `Account ${bucket.accountKey.slice(0, 8)}` : "Unknown";
+}
+
 async function isAgyConfigured(ctx: QuotaProviderContext): Promise<boolean> {
   try {
     return await hasAgyQuotaRuntimeAvailable(ctx.client);
@@ -60,7 +67,8 @@ export const googleAgyProvider: QuotaProvider = {
 
       if (!groupName) continue;
 
-      const key = `${bucket.accountEmail || ""}::${groupName}`;
+      const accountKey = bucket.accountKey || bucket.accountEmail || "";
+      const key = `${accountKey}::${groupName}`;
       const existing = groupedBuckets.get(key);
 
       if (!existing || bucket.percentRemaining < existing.percentRemaining) {
@@ -73,7 +81,7 @@ export const googleAgyProvider: QuotaProvider = {
     );
 
     const entries = finalBuckets.map((bucket) => {
-      const emailLabel = formatGoogleAccountLabel(bucket.accountEmail, "domainHint");
+      const emailLabel = formatAgyAccountLabel(bucket);
       const parsedRemaining = bucket.remainingAmount
         ? Number.parseInt(bucket.remainingAmount, 10)
         : Number.NaN;
